@@ -25,15 +25,31 @@ node /ruta/a/design-harness/install.mjs --write-paths "apps/web/src/**"
 | `--write-paths` | `src/**` | Dónde puede escribir el executor (el código que implementa) |
 | `--gates "a;b"` | `pnpm typecheck;pnpm lint` | Gates del baseline y de cada slice |
 | `--package-filter` | — | Prefijo de paquete del monorepo (ej: `@org/console`) |
+| `--install-skills` | — | Instala automáticamente las skills de expertos faltantes (clona el repo fuente y copia la skill al dir global de opencode) |
+| `--skills-dir` | `~/.config/opencode/skills` | Directorio destino de las skills instaladas por `--install-skills` |
 | `--check` | — | Diagnóstico de instalación (exit 0 = completa) |
 | `--uninstall` | — | Revierte la instalación (respeta `docs/design/` y tu config) |
 | `--dry-run` | — | Muestra qué haría sin escribir nada |
 | `--force` | — | Reemplaza skill/golden rule existentes |
 
-### Skills de expertos
+### Skills de expertos (automático o manual)
 
-El instalador verifica `ui-ux-pro-max`, `impeccable` y `vercel-react-best-practices`.
-Si faltan, te indica el comando exacto, p. ej.:
+El harness usa 3 skills para sus expertos: `ui-ux-pro-max`, `impeccable` y
+`vercel-react-best-practices`. El instalador las verifica al instalar.
+
+**Automático (recomendado)** — durante la instalación:
+
+```bash
+node design-harness/install.mjs --install-skills
+```
+
+Clona cada repo fuente (`git clone --depth 1`) y copia la skill a
+`~/.config/opencode/skills/` (dir de discovery global de opencode). Es
+determinista: usa el `skillPath` exacto declarado en el manifest. Si alguna
+falla (sin red, path inexistente), reporta el warning y te da la alternativa
+manual — nunca aborta la instalación del harness.
+
+**Manual** — las 3 vías equivalentes:
 
 ```bash
 npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g
@@ -41,7 +57,20 @@ npx skills add pbakaus/impeccable -g
 npx skills add vercel-labs/agent-skills -g
 ```
 
-Sin ellas el harness degrada (el orquestador inyecta la metodología), pero
+```bash
+git clone --depth 1 https://github.com/pbakaus/impeccable /tmp/impeccable
+cp -r /tmp/impeccable/.agents/skills/impeccable ~/.config/opencode/skills/
+```
+
+> Nota: `ui-ux-pro-max-skill` y `agent-skills` contienen varias skills — si el
+> CLI `npx skills` te pide seleccionar, elige la exacta (`ui-ux-pro-max` /
+> `vercel-react-best-practices`). Con `--install-skills` no hay selección: copia
+> solo la skill declarada en el manifest.
+
+Después de cualquier vía: `node design-harness/install.mjs --check` y reinicia
+opencode (el discovery de skills corre al arrancar).
+
+Sin las skills el harness degrada (el orquestador inyecta la metodología), pero
 instálalas para calidad completa.
 
 ## 3. Primer diseño

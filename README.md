@@ -36,17 +36,19 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 ```bash
 git clone https://github.com/luismasuarez/design-harness
-node design-harness/install.mjs                              # defaults: src/** + pnpm gates
+node design-harness/install.mjs --install-skills                  # + skills de expertos automáticamente
 # o parametrizado a tu stack:
 node design-harness/install.mjs --write-paths "apps/web/src/**" --gates "pnpm typecheck;pnpm lint"
-node design-harness/install.mjs --check                      # diagnóstico
+node design-harness/install.mjs --check                           # diagnóstico
 ```
 
 El instalador: agrega los 6 agents (orquestador primary + 4 expertos + executor,
 todos subagentes invisibles) y el comando `/design` a tu `opencode.json`, copia la
 skill con sus scripts a `.opencode/skills/design-orchestrator/`, appendea la
-golden rule en `AGENTS.md` y crea `docs/design/`. Idempotente y reversible
-(`--uninstall` respeta tus artefactos).
+golden rule en `AGENTS.md` y crea `docs/design/`. Con `--install-skills` además
+clona e instala las 3 skills de expertos (`ui-ux-pro-max`, `impeccable`,
+`vercel-react-best-practices`) en `~/.config/opencode/skills/`. Idempotente y
+reversible (`--uninstall` respeta tus artefactos).
 
 **Después**: reinicia opencode → selecciona el modo `design-orchestrator` →
 `/design <scope>` con tu brief.

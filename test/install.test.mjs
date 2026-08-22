@@ -124,3 +124,46 @@ test("gates parametrizadas llegan al prompt del executor", () => {
   assert.ok(cfg.agent.executor.prompt.includes("pnpm --filter @org/console typecheck"))
   assert.ok(cfg.agent["design-orchestrator"].prompt.includes("pnpm --filter @org/console typecheck"))
 })
+
+test("--install-skills instala las 3 skills de expertos desde repo fuente local", () => {
+  // Repo fuente falso con los skillPaths del manifest
+  const fakeRepo = mkdtempSync(join(tmpdir(), "dh-fake-repo-"))
+  const skills = [
+    [".claude/skills/ui-ux-pro-max", "ui-ux-pro-max"],
+    [".agents/skills/impeccable", "impeccable"],
+    ["skills/react-best-practices", "vercel-react-best-practices"],
+  ]
+  for (const [folder, name] of skills) {
+    const dir = join(fakeRepo, folder)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: skill falsa para test\n---\n`)
+  }
+  const skillsDir = mkdtempSync(join(tmpdir(), "dh-skills-dest-"))
+  const isolated = ["--skills-check-dirs", skillsDir]
+
+  const r = run("--install-skills", "--skills-dir", skillsDir, "--skills-src-dir", fakeRepo, ...isolated)
+  assert.equal(r.status, 0, r.stderr + r.stdout)
+  assert.ok(existsSync(join(skillsDir, "ui-ux-pro-max", "SKILL.md")), "ui-ux-pro-max instalada")
+  assert.ok(existsSync(join(skillsDir, "impeccable", "SKILL.md")), "impeccable instalada")
+  assert.ok(existsSync(join(skillsDir, "vercel-react-best-practices", "SKILL.md")), "vercel-react-best-practices instalada")
+
+  // Idempotente: no reclona ni duplica en una segunda corrida
+  const r2 = run("--install-skills", "--skills-dir", skillsDir, "--skills-src-dir", fakeRepo, ...isolated)
+  assert.equal(r2.status, 0, r2.stderr)
+  assert.equal(readdirSync(join(skillsDir, "ui-ux-pro-max")).filter((f) => f === "SKILL.md").length, 1)
+
+  // --check ahora las detecta (status 0)
+  const chk = run("--check", "--skills-dir", skillsDir, ...isolated)
+  assert.equal(chk.status, 0, chk.stdout)
+  assert.ok(chk.stdout.includes("Instalación completa"), chk.stdout)
+})
+
+test("--install-skills reporta error si el skillPath no existe en el repo fuente", () => {
+  const fakeRepo = mkdtempSync(join(tmpdir(), "dh-fake-repo2-"))
+  mkdirSync(join(fakeRepo, ".claude", "skills"), { recursive: true })
+  // sin la skill dentro
+  const skillsDir = mkdtempSync(join(tmpdir(), "dh-skills-dest2-"))
+  const r = run("--install-skills", "--skills-dir", skillsDir, "--skills-src-dir", fakeRepo, "--skills-check-dirs", skillsDir)
+  assert.equal(r.status, 0, "el instalador no falla; reporta warning")
+  assert.ok(r.stdout.includes("NO instalada"), r.stdout)
+})

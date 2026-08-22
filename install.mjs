@@ -22,11 +22,16 @@
  *   --dry-run              Muestra las acciones sin escribirlas
  *   --force                Reemplaza artefactos existentes (skill dir, bloque golden rule)
  *   --skip-skills-check    Omite la verificación de skills de expertos
+ *   --install-skills       Instala las skills de expertos faltantes automáticamente
+ *   --skills-dir <dir>     Directorio destino de las skills instaladas (default: ~/.config/opencode/skills)
+ *   --skills-src-dir <dir> Checkout local del repo fuente (omite el git clone; offline/tests)
+ *   --skills-check-dirs <a;b>  Restringe la búsqueda de skills a estos dirs (tests/aislamiento)
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, statSync, mkdtempSync } from "node:fs"
 import { join, dirname, resolve } from "node:path"
-import { homedir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { fileURLToPath } from "node:url"
+import { spawnSync } from "node:child_process"
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url))
 const HARNESS_NAME = "design-harness"
@@ -35,15 +40,24 @@ const SKILL_SRC = join(HARNESS_DIR, "skills", ORCHESTRATOR)
 const MARKER = ".design-harness-installed.json"
 
 const EXPERT_SKILLS = [
-  { skill: "ui-ux-pro-max", source: "nextlevelbuilder/ui-ux-pro-max-skill", install: "npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g" },
-  { skill: "impeccable", source: "pbakaus/impeccable", install: "npx skills add pbakaus/impeccable -g" },
-  { skill: "vercel-react-best-practices", source: "vercel-labs/agent-skills", install: "npx skills add vercel-labs/agent-skills -g" },
+  { skill: "ui-ux-pro-max", source: "nextlevelbuilder/ui-ux-pro-max-skill", skillPath: ".claude/skills/ui-ux-pro-max/SKILL.md", install: "npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g" },
+  { skill: "impeccable", source: "pbakaus/impeccable", skillPath: ".agents/skills/impeccable/SKILL.md", install: "npx skills add pbakaus/impeccable -g" },
+  { skill: "vercel-react-best-practices", source: "vercel-labs/agent-skills", skillPath: "skills/react-best-practices/SKILL.md", install: "npx skills add vercel-labs/agent-skills -g" },
 ]
+
+/** Enriquece EXPERT_SKILLS con el skillPath del manifest (fuente de verdad) si está declarado. */
+function expertSkillsFromManifest(m) {
+  return EXPERT_SKILLS.map((entry) => {
+    const expert = (m.roster?.experts ?? []).find((e) => e.skills?.includes(entry.skill))
+    const skillPath = expert?.skillSource?.skillPath ?? entry.skillPath
+    return { ...entry, skillPath }
+  })
+}
 
 /* ---------- utilidades ---------- */
 
 function parseArgs(argv) {
-  const args = { project: process.cwd(), writePaths: "src/**", gates: ["pnpm typecheck", "pnpm lint"], check: false, uninstall: false, dryRun: false, force: false, skipSkills: false, packageFilter: null }
+  const args = { project: process.cwd(), writePaths: "src/**", gates: ["pnpm typecheck", "pnpm lint"], check: false, uninstall: false, dryRun: false, force: false, skipSkills: false, packageFilter: null, installSkills: false, skillsDir: join(homedir(), ".config", "opencode", "skills"), skillsSrcDir: null, skillsCheckDirs: null }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
     const next = () => argv[++i]
@@ -57,6 +71,10 @@ function parseArgs(argv) {
       case "--dry-run": args.dryRun = true; break
       case "--force": args.force = true; break
       case "--skip-skills-check": args.skipSkills = true; break
+      case "--install-skills": args.installSkills = true; break
+      case "--skills-dir": args.skillsDir = resolve(next()); break
+      case "--skills-src-dir": args.skillsSrcDir = resolve(next()); break
+      case "--skills-check-dirs": args.skillsCheckDirs = next().split(";").map((d) => resolve(d.trim())).filter(Boolean); break
     }
   }
   return args
@@ -273,22 +291,62 @@ ${GOLDEN_END}`
 
 /* ---------- skills check ---------- */
 
-function skillDirs(project) {
-  return [
+function skillDirs(project, extraDir, onlyDirs) {
+  if (onlyDirs?.length) return onlyDirs
+  const dirs = [
     join(project, ".opencode", "skills"),
     join(project, ".agents", "skills"),
     join(homedir(), ".config", "opencode", "skills"),
     join(homedir(), ".agents", "skills"),
   ]
+  if (extraDir && !dirs.includes(extraDir)) dirs.push(extraDir)
+  return dirs
 }
 
-function checkExpertSkills(project) {
+function checkExpertSkills(project, extraDir, skillList = EXPERT_SKILLS, onlyDirs = null) {
+  const dirs = skillDirs(project, extraDir, onlyDirs)
   const missing = []
-  for (const entry of EXPERT_SKILLS) {
-    const found = skillDirs(project).some((dir) => existsSync(join(dir, entry.skill)))
+  for (const entry of skillList) {
+    const found = dirs.some((dir) => existsSync(join(dir, entry.skill)))
     if (!found) missing.push(entry)
   }
   return missing
+}
+
+/**
+ * Instala una skill de experto de forma determinista (doc oficial de opencode):
+ * clona el repo fuente y copia la carpeta de la skill (dirname del skillPath)
+ * al directorio de discovery destino. Sin dependencias del CLI skills.
+ */
+function installExpertSkill(entry, args) {
+  const skillFolder = dirname(entry.skillPath)
+  const dest = join(args.skillsDir, entry.skill)
+  if (existsSync(dest)) return { ok: true, skipped: true }
+
+  let repoDir
+  let tmp = null
+  if (args.skillsSrcDir) {
+    repoDir = args.skillsSrcDir
+  } else {
+    tmp = mkdtempSync(join(tmpdir(), "dh-skills-"))
+    const repoUrl = `https://github.com/${entry.source}.git`
+    const r = spawnSync("git", ["clone", "--depth", "1", repoUrl, join(tmp, "repo")], { encoding: "utf8" })
+    if (r.status !== 0) {
+      rmSync(tmp, { recursive: true, force: true })
+      return { ok: false, error: `git clone ${repoUrl} falló: ${(r.stderr || r.stdout || "").trim().slice(0, 300)}` }
+    }
+    repoDir = join(tmp, "repo")
+  }
+
+  const src = join(repoDir, skillFolder)
+  if (!existsSync(join(src, "SKILL.md"))) {
+    if (tmp) rmSync(tmp, { recursive: true, force: true })
+    return { ok: false, error: `skillPath ${entry.skillPath} no encontrado en ${repoDir}` }
+  }
+  mkdirSync(dirname(dest), { recursive: true })
+  cpSync(src, dest, { recursive: true })
+  if (tmp) rmSync(tmp, { recursive: true, force: true })
+  return { ok: true, dest }
 }
 
 /* ---------- acciones ---------- */
@@ -348,6 +406,7 @@ function main() {
   }
 
   const m = manifest()
+  const SKILLS = expertSkillsFromManifest(m)
 
   if (args.check) {
     const { cfg } = readAgentsConfig(project)
@@ -356,7 +415,7 @@ function main() {
     const commandOk = !!cfg.command?.design
     const skillOk = existsSync(join(skillDir, "SKILL.md")) && existsSync(join(skillDir, "scripts", "render-audit.js"))
     const goldenOk = existsSync(join(project, "AGENTS.md")) && readFileSync(join(project, "AGENTS.md"), "utf8").includes(GOLDEN_START)
-    const missing = args.skipSkills ? [] : checkExpertSkills(project)
+    const missing = args.skipSkills ? [] : checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
     const rows = [
       ["Agents (orchestrator + expertos + executor)", agentsOk ? "ok" : "falta"],
       ["Comando /design", commandOk ? "ok" : "falta"],
@@ -412,14 +471,14 @@ function main() {
   const skillExists = existsSync(skillDir)
   const golden = upsertGoldenRule(project, args.force)
   const docsDir = join(project, "docs", "design")
-  const missingSkills = args.skipSkills ? [] : checkExpertSkills(project)
+  const missingSkills = args.skipSkills ? [] : checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
 
   if (args.dryRun) {
     log("dry-run", `escribiría ${cfgPath} (agents + comando /design, ${Object.keys(built.agent).length} agents)`)
     log("dry-run", `${skillExists && !args.force ? "skill existente → skip (usa --force para reemplazar)" : "copiaría skill a " + skillDir}`)
     log("dry-run", `${golden.path}: ${golden.action}`)
     log("dry-run", `crearía ${docsDir}`)
-    for (const s of missingSkills) log("warn", `skill faltante: ${s.skill} → ${s.install}`)
+    for (const s of missingSkills) log("dry-run", `instalaría skill ${s.skill} → ${args.skillsDir}/${s.skill}`)
     return
   }
 
@@ -453,8 +512,23 @@ function main() {
   log("ok", `${docsDir} — directorio de artefactos`)
 
   if (missingSkills.length) {
-    for (const s of missingSkills) log("warn", `skill de experto faltante: ${s.skill} → instala con: ${s.install}`)
-    log("warn", "Sin las skills de expertos, los subagentes degradarán (el orquestador inyecta la metodología).")
+    if (args.installSkills) {
+      log("info", `instalando ${missingSkills.length} skill(s) de experto en ${args.skillsDir}...`)
+      for (const s of missingSkills) {
+        const res = installExpertSkill(s, args)
+        if (res.ok) log("ok", `${s.skill} instalada → ${res.skipped ? "ya existía" : res.dest}`)
+        else log("warn", `${s.skill} NO instalada: ${res.error}`)
+      }
+      const stillMissing = checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
+      if (stillMissing.length) {
+        for (const s of stillMissing) log("warn", `skill aún faltante: ${s.skill} → instala manualmente: ${s.install}`)
+      } else {
+        log("ok", "todas las skills de expertos disponibles")
+      }
+    } else {
+      for (const s of missingSkills) log("warn", `skill de experto faltante: ${s.skill} → instala con: ${s.install} (o usa --install-skills)`)
+      log("warn", "Sin las skills de expertos, los subagentes degradarán (el orquestador inyecta la metodología).")
+    }
   }
 
   log("ok", "design-harness instalado. Reinicia opencode y selecciona el modo design-orchestrator.")
