@@ -8,6 +8,7 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 ![License](https://img.shields.io/github/license/luismasuarez/design-harness)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-339933)
+![Tests](https://img.shields.io/github/actions/workflow/status/luismasuarez/design-harness/test.yml?branch=main&label=tests)
 
 ## Qué hace
 
@@ -34,12 +35,22 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 ## Instalación (en tu proyecto)
 
+**Vía A — completa (recomendada)**: instalador que ensambla agents, comando,
+golden rule, scripts y skills de expertos:
+
 ```bash
 git clone https://github.com/luismasuarez/design-harness
 node design-harness/install.mjs --install-skills                  # + skills de expertos automáticamente
 # o parametrizado a tu stack:
 node design-harness/install.mjs --write-paths "apps/web/src/**" --gates "pnpm typecheck;pnpm lint"
 node design-harness/install.mjs --check                           # diagnóstico
+```
+
+**Vía B — skill del ecosistema**: solo la skill del orquestador (para usarla con
+`harness-factory` o como referencia):
+
+```bash
+npx skills add luismasuarez/design-harness -g -s design-orchestrator
 ```
 
 El instalador: agrega los 6 agents (orquestador primary + 4 expertos + executor,
