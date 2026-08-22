@@ -60,6 +60,44 @@ instálalas para calidad completa.
 5. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
    Tú puedes detener el flujo en cualquier momento.
 
+### Brief de ejemplo (listo para copiar)
+
+```
+/design settings-page
+
+Mejora la página de ajustes de usuario en <apps/web/src/features/settings/>.
+El estado actual es una sola Card con formulario de lectura/edición: email (disabled),
+nombre, empresa y teléfono. Quiero una propuesta de rediseño de nivel producto,
+no solo un maquillaje.
+
+Objetivos de la propuesta (evalúa cuáles aportan más valor, no implementes todos por inercia):
+1. Cabecera de perfil con avatar (iniciales o placeholder), nombre, empresa y estado
+   de cuenta; jerarquía visual clara.
+2. Layout de dos columnas (contenido principal + barra lateral) o secciones
+   visualmente diferenciadas: Datos personales / Empresa / Enlaces / Preferencias.
+3. Mejorar estados: loading con skeleton realista, empty (sin datos), error con
+   retry, y feedback de guardado (éxito/error).
+4. UX copy en español LATAM neutral, tuteo, consistente con el resto de la app.
+5. Respeta el design system del proyecto: usa DESIGN.md, tokens y componentes de
+   la librería UI. Nada de clases ad hoc fuera del sistema.
+
+Restricciones:
+- NO cambies contratos existentes: <DevProfile>, hook use-<entity>-profile, schema zod
+  ni el endpoint del SDK. Cualquier cambio de campos debe marcarse como propuesta
+  opcional en la síntesis, nunca como requisito.
+- Los componentes deben seguir el patrón presentacional del código actual
+  (dumb components + hooks por separado).
+- Mantén los tests existentes funcionando; si la propuesta altera el formulario,
+  incluye en el plan la actualización de tests como slice.
+- Solo propuesta: tras la síntesis (design-proposal.md) espera mi aprobación
+  explícita antes de implementar cualquier slice.
+```
+
+> Sustituye los marcadores `<apps/web/src/...>`, `<DevProfile>` y
+> `use-<entity>-profile` por los nombres reales de tu proyecto. El harness
+> investiga el contexto por sí solo: un brief corto ("mejora X respetando el
+> design system") también basta.
+
 ## 4. Buenas prácticas del brief
 
 - Describe el **estado actual** (qué hay hoy) y el **objetivo** (qué quieres).
