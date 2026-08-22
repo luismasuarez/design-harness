@@ -1,0 +1,19 @@
+{
+  "name": "design-harness",
+  "version": "0.1.0",
+  "description": "Harness Mixture-of-Experts de diseño UI/UX para opencode: investigación, sistema de diseño, wireframes, crítica con métricas y ejecución por slices",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test test/install.test.mjs"
+  },
+  "files": [
+    "install.mjs",
+    "harness.manifest.json",
+    "skills/",
+    "docs/"
+  ]
+}

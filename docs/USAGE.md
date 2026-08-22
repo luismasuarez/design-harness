@@ -1,0 +1,102 @@
+# Uso del design-harness
+
+Guía para desarrolladores que instalan el harness en su proyecto.
+
+## 1. Requisitos
+
+| Requisito | Nota |
+|---|---|
+| opencode | Con el MCP `chrome-devtools` habilitado (necesario para el loop visual: render del wireframe, screenshots y métricas) |
+| Node ≥ 18 | Para el instalador y los scripts del harness |
+| Git | El baseline gate verifica el árbol limpio |
+
+## 2. Instalación
+
+```bash
+git clone https://github.com/luismasuarez/design-harness
+cd tu-proyecto
+node /ruta/a/design-harness/install.mjs --write-paths "apps/web/src/**"
+```
+
+### Flags principales
+
+| Flag | Default | Qué configura |
+|---|---|---|
+| `--write-paths` | `src/**` | Dónde puede escribir el executor (el código que implementa) |
+| `--gates "a;b"` | `pnpm typecheck;pnpm lint` | Gates del baseline y de cada slice |
+| `--package-filter` | — | Prefijo de paquete del monorepo (ej: `@org/console`) |
+| `--check` | — | Diagnóstico de instalación (exit 0 = completa) |
+| `--uninstall` | — | Revierte la instalación (respeta `docs/design/` y tu config) |
+| `--dry-run` | — | Muestra qué haría sin escribir nada |
+| `--force` | — | Reemplaza skill/golden rule existentes |
+
+### Skills de expertos
+
+El instalador verifica `ui-ux-pro-max`, `impeccable` y `vercel-react-best-practices`.
+Si faltan, te indica el comando exacto, p. ej.:
+
+```bash
+npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g
+npx skills add pbakaus/impeccable -g
+npx skills add vercel-labs/agent-skills -g
+```
+
+Sin ellas el harness degrada (el orquestador inyecta la metodología), pero
+instálalas para calidad completa.
+
+## 3. Primer diseño
+
+1. Reinicia opencode (para que cargue agents y comando).
+2. En el selector de agentes verás **un solo modo nuevo**: `Design-Orchestrator`.
+   Selecciónalo.
+3. Ejecuta con tu brief:
+
+```
+/design settings-page "Mejora la página de ajustes: jerarquía, estados de carga y errores, UX copy. Respeta los contratos existentes y el design system del proyecto."
+```
+
+4. El pipeline corre solo y se detiene en `docs/design/settings-page/design-proposal.md`
+   esperando tu OK. Revisa la propuesta (slices, contratos, riesgos) y aprueba o pide cambios.
+5. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
+   Tú puedes detener el flujo en cualquier momento.
+
+## 4. Buenas prácticas del brief
+
+- Describe el **estado actual** (qué hay hoy) y el **objetivo** (qué quieres).
+- Declara **contratos intocables** (componentes, hooks, schemas, endpoints, tests).
+- Pide respetar el **design system del proyecto** (DESIGN.md, tokens, librería UI).
+- Pide la **propuesta primero**: el harness siempre espera tu OK antes de tocar código.
+
+## 5. Métricas post-run
+
+```bash
+node .opencode/skills/design-orchestrator/scripts/run-metrics.mjs --scope settings-page
+node .opencode/skills/design-orchestrator/scripts/run-metrics.mjs --session ses_xxxx  # por id de sesión
+```
+
+Genera `docs/design/shared/run-metrics-<scope>.{json,md}` con tokens, costo,
+delegaciones, contexto del orquestador y calidad. Útil para comparar el costo de
+los diseños entre scopes, modelos y equipos.
+
+## 6. Personalización
+
+El `harness.manifest.json` del paquete es la fuente de verdad (roster, pipeline,
+gates, slices). Cámbialo y re-ejecuta:
+
+```bash
+node /ruta/a/design-harness/install.mjs --force
+```
+
+Para re-generar los artefactos desde el manifest usando el estándar completo,
+puedes usar [harness-factory](https://github.com/luismasuarez/harness-factory)
+(`/factory build`).
+
+## 7. Troubleshooting
+
+| Problema | Solución |
+|---|---|
+| No aparece el modo `Design-Orchestrator` | Reinicia opencode; verifica `node install.mjs --check` |
+| El critique no audita el render | Verifica el MCP `chrome-devtools` habilitado; el critique degrada a snapshot de accesibilidad + métricas DOM |
+| Gates fallan en el baseline | El harness se detiene (tripwire) y reporta; corrige el baseline antes de continuar — es la red de seguridad |
+| El critique no ve imágenes | Es la vía compatible: audita el DOM renderizado con métricas medidas (`render-audit.js`); para auditoría visual de píxeles usa un modelo con visión |
+| Quieres deshacer | `node install.mjs --uninstall` revierte agents, comando, skill y golden rule; tus artefactos de `docs/design/` se conservan |

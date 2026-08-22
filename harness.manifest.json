@@ -1,0 +1,234 @@
+{
+  "$schema": "https://github.com/luismasuarez/harness-factory/blob/main/schema/harness.manifest.schema.json",
+  "harness": {
+    "name": "design-harness",
+    "version": "1.0.0",
+    "description": "Genera propuestas de diseño UI/UX iterativas: investigación, sistema de diseño, wireframes y layouts con crítica visual, orquestadas por design-orchestrator",
+    "skillDescription": "Diseño UI/UX, wireframes, layouts, design system, propuesta de interfaz, crítica de diseño, audit visual, iteración de diseño, brief de diseño, rediseño de pantallas"
+  },
+  "command": {
+    "name": "design",
+    "description": "Ejecuta el harness de diseño UI/UX para un scope (pantalla, sección o flujo): investigación, sistema de diseño, wireframes, crítica iterativa y propuesta",
+    "agent": "design-orchestrator",
+    "template": "Ejecuta el harness de diseño UI/UX para el scope: $ARGUMENTS. Sigue el pipeline completo: baseline, delegación a expertos, loop de crítica, síntesis y aprobación."
+  },
+  "scope": {
+    "argument": "scope",
+    "artifactRoot": "docs/design/<scope>",
+    "artifactBase": "docs/design",
+    "sharedDir": "docs/design/shared"
+  },
+  "roster": {
+    "experts": [
+      {
+        "id": "expert-research",
+        "role": "analysis-expert",
+        "roleLabel": "Research UX",
+        "description": "Prepara el contexto del diseño: brief, audiencia, stack y estado visual actual del proyecto",
+        "skills": ["ui-ux-pro-max"],
+        "skillSource": {
+          "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "sourceType": "github",
+          "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md"
+        },
+        "deliverable": "docs/design/<scope>/research.md",
+        "readPaths": ["DESIGN.md", "PRODUCT.md", "docs/**", "src/**"],
+        "task": "analiza el brief del scope, la audiencia objetivo, el stack y el contexto visual existente del proyecto (DESIGN.md, PRODUCT.md, tokens, componentes de la librería UI); escribe research.md con: contexto del producto, objetivos de diseño, audiencia, mapa de pantallas del scope, restricciones técnicas y referencias visuales del proyecto",
+        "summary": "contexto del scope, mapa de pantallas y el artifact path escrito",
+        "trigger": ["brief", "research", "preparación", "contexto", "audiencia"]
+      },
+      {
+        "id": "expert-design-system",
+        "role": "analysis-expert",
+        "roleLabel": "Design System",
+        "description": "Genera el sistema de diseño del scope: estilo, paleta, tipografía, tokens y anti-patrones",
+        "skills": ["ui-ux-pro-max"],
+        "skillSource": {
+          "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+          "sourceType": "github",
+          "skillPath": ".claude/skills/ui-ux-pro-max/SKILL.md"
+        },
+        "deliverable": "docs/design/<scope>/design-system.md",
+        "input": ["docs/design/<scope>/research.md"],
+        "task": "genera el sistema de diseño del scope con la metodología de ui-ux-pro-max (--design-system): estilo visual, paleta de colores, tipografía, efectos y tokens, coherentes con el research del scope; incluye los anti-patrones a evitar",
+        "summary": "sistema de diseño propuesto y el artifact path escrito",
+        "trigger": ["design system", "paleta", "tipografía", "tokens", "estilo"]
+      },
+      {
+        "id": "expert-wireframe",
+        "role": "analysis-expert",
+        "roleLabel": "Wireframes & Layout",
+        "description": "Produce wireframes por pantalla, layout spec y un wireframe.html lo-fi renderizable",
+        "skills": ["ui-ux-pro-max", "vercel-react-best-practices"],
+        "skillSource": {
+          "source": "vercel-labs/agent-skills",
+          "sourceType": "github",
+          "skillPath": "skills/react-best-practices/SKILL.md"
+        },
+        "deliverable": "docs/design/<scope>/wireframes.md",
+        "input": [
+          { "ref": "expert-research.deliverable" },
+          { "ref": "expert-design-system.deliverable" }
+        ],
+        "task": "produce los wireframes de cada pantalla del scope (estructura, jerarquía, grid, breakpoints responsive), el layout spec en layouts.md (spacing, alineación, ritmo) y un wireframe.html estático lo-fi que renderice todas las pantallas para captura visual",
+        "overrides": {
+          "prompt": "Escribe tres artefactos bajo docs/design/<scope>/: wireframes.md, layouts.md y wireframe.html. El wireframe.html debe ser autocontenido (una sola página, CSS inline o Tailwind CDN, sin dependencias ni builds) y abrible en un navegador sin servidor."
+        },
+        "summary": "pantallas cubiertas, decisiones de layout y los artifact paths escritos",
+        "trigger": ["wireframe", "layout", "estructura", "mockup", "pantalla"]
+      },
+      {
+        "id": "expert-critique",
+        "role": "analysis-expert",
+        "roleLabel": "Crítica UX",
+        "description": "Audita la propuesta de diseño con heurísticas y score, sobre spec e imagen real",
+        "skills": ["impeccable"],
+        "skillSource": {
+          "source": "pbakaus/impeccable",
+          "sourceType": "github",
+          "skillPath": ".agents/skills/impeccable/SKILL.md"
+        },
+        "deliverable": "docs/design/<scope>/critique.md",
+        "input": [
+          { "ref": "expert-wireframe.deliverable" },
+          "docs/design/<scope>/layouts.md",
+          "docs/design/<scope>/screenshots/"
+        ],
+        "task": "audita la propuesta de diseño con la metodología de impeccable (critique/audit): score por categoría (jerarquía visual, tipografía, color y contraste, spacing, responsive, accesibilidad, UX copy), issues priorizados por severidad y recomendaciones accionables; si existen screenshots en docs/design/<scope>/screenshots/, audita la imagen real",
+        "summary": "score global, issues críticos priorizados y el artifact path escrito",
+        "trigger": ["critique", "audit", "review", "heurísticas", "score"],
+        "overrides": {
+          "prompt": "Protocolo de auditoría medida (ronda de crítica):\n1. Abre docs/design/<scope>/wireframe.html en chrome-devtools (pestaña nueva).\n2. Inyecta el contenido de scripts/render-audit.js del skill design-orchestrator vía evaluate y ejecuta window.renderAudit({ all: true }) para recorrer los estados del wireframe.\n3. Interpreta las métricas con números reales: tabla de contraste WCAG (ratio por elemento; fails < 4.5:1 texto normal, < 3:1 texto grande), ritmo (gaps y alineaciones con irregularidades > 2px), escala tipográfica, target sizes (WCAG 2.2, >= 24px), overflow horizontal y focus.\n4. Complementa con la metodología de impeccable (Assessment A: heurísticas de Nielsen y revisión de diseño; Assessment B: detector y evidencia de browser) y, si el modelo puede leer imágenes, audita también los screenshots.\n5. Degradación (vía compatible sin visión): si render-audit.js falla o el browser no está disponible, usa snapshot de accesibilidad + DOM renderizado + heurísticas sobre el spec — nunca omitas la crítica.\n6. Escribe critique.md con una sección 'Métricas medidas' que cite los números reales y los fails."
+        }
+      }
+    ],
+    "executor": {
+      "id": "executor",
+      "description": "Implementa los slices de diseño aprobados en el stack del proyecto",
+      "writePaths": ["src/**"],
+      "readPaths": ["docs/design/**"],
+      "bash": ["pnpm *", "pnpm typecheck", "pnpm lint", "npm *", "yarn *"],
+      "gates": {
+        "dir": ".",
+        "commands": [
+          {
+            "name": "typecheck",
+            "command": "pnpm typecheck",
+            "expect": "green",
+            "notes": "typecheck del proyecto"
+          },
+          {
+            "name": "lint",
+            "command": "pnpm lint",
+            "expect": "no-new-errors",
+            "notes": ">= baseline count; auto-fixes solo revierten archivos ajenos"
+          }
+        ]
+      },
+      "commit": {
+        "stageOnly": true,
+        "messageTemplate": "harness(design/<scope>): <slice>"
+      },
+      "hardConstraints": [
+        "No instalar dependencias ni ejecutar migraciones",
+        "Solo editar dentro de los writePaths del proyecto salvo que el blueprint aprobado diga lo contrario"
+      ]
+    }
+  },
+  "orchestrator": {
+    "agent": {
+      "name": "design-orchestrator",
+      "description": "Orquesta el harness de diseño UI/UX (modo primary de opencode): investigación, sistema de diseño, wireframes, crítica iterativa y propuesta aprobada, delegando en expertos read-only"
+    },
+    "baseline": {
+      "cleanWorkingTree": true,
+      "recordSha": true,
+      "gates": {
+        "dir": ".",
+        "commands": [
+          {
+            "name": "typecheck",
+            "command": "pnpm typecheck",
+            "expect": "green",
+            "notes": "typecheck del proyecto"
+          },
+          {
+            "name": "lint",
+            "command": "pnpm lint",
+            "expect": "no-new-errors",
+            "notes": ">= baseline count"
+          }
+        ]
+      }
+    },
+    "pipeline": [
+      {
+        "type": "mkdir",
+        "path": "docs/design/<scope>",
+        "description": "(directorio de artefactos del scope, incluido screenshots/)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-research",
+        "description": "(brief, audiencia, contexto visual del proyecto, mapa de pantallas)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-design-system",
+        "description": "(estilo, paleta, tipografía, tokens, anti-patrones — input: research)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-wireframe",
+        "description": "(wireframes por pantalla, layouts.md, wireframe.html lo-fi — inputs: research + design-system)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-critique",
+        "description": "(ronda 1 — score por heurísticas sobre wireframes + layouts. ANTES de delegar, el orquestador renderiza wireframe.html en chrome-devtools y captura screenshots a docs/design/<scope>/screenshots/)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-wireframe",
+        "description": "(ronda 2 — SOLO si el score de critique < umbral: refina wireframes con critique.md como input; si el score es aceptable, se omite)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-critique",
+        "description": "(ronda 2 — re-evaluación final si hubo ronda 2; se omite si no hubo)"
+      },
+      {
+        "type": "synthesize",
+        "path": "docs/design/<scope>/design-proposal.md",
+        "description": "(consolida research + design system + wireframes + layouts + critique en la propuesta final con plan de implementación por slices)"
+      },
+      {
+        "type": "execute",
+        "description": "(opcional — solo si el usuario aprueba implementar: slices por pantalla/componente con gates por slice. DELEGACIÓN OBLIGATORIA: cada slice se delega al executor vía Task tool con el blueprint (design-proposal.md + slice exacto); el orquestador NUNCA edita código fuente en esta fase, solo valida el retorno del executor: archivos aplicados, gates, commit hash)"
+      }
+    ],
+    "synthesis": {
+      "deliverable": "docs/design/<scope>/design-proposal.md",
+      "approvalRequired": true
+    },
+    "execution": {
+      "mode": "slices",
+      "sliceRule": "un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit",
+      "perSliceGates": {
+        "dir": ".",
+        "commands": [
+          {
+            "name": "typecheck",
+            "command": "pnpm typecheck",
+            "expect": "green"
+          },
+          {
+            "name": "lint",
+            "command": "pnpm lint",
+            "expect": "no-new-errors"
+          }
+        ]
+      }
+    }
+  }
+}
