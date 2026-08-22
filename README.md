@@ -35,18 +35,24 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 ## Instalación (en tu proyecto)
 
-**Vía A — completa (recomendada)**: instalador que ensambla agents, comando,
-golden rule, scripts y skills de expertos:
+**Vía A — un solo comando (recomendada)**: sin clonar, desde tu proyecto:
+
+```bash
+npx design-harness install --write-paths "apps/web/src/**" --install-skills
+npx design-harness install --check
+```
+
+> Antes de publicar en npm, la vía equivalente es:
+> `npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"`
+
+**Vía B — clonando el repo**: igual de completa, con el código a mano:
 
 ```bash
 git clone https://github.com/luismasuarez/design-harness
-node design-harness/install.mjs --install-skills                  # + skills de expertos automáticamente
-# o parametrizado a tu stack:
-node design-harness/install.mjs --write-paths "apps/web/src/**" --gates "pnpm typecheck;pnpm lint"
-node design-harness/install.mjs --check                           # diagnóstico
+node design-harness/install.mjs install --install-skills
 ```
 
-**Vía B — skill del ecosistema**: solo la skill del orquestador (para usarla con
+**Vía C — skill del ecosistema**: solo la skill del orquestador (para usar con
 `harness-factory` o como referencia):
 
 ```bash

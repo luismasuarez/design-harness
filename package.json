@@ -4,6 +4,9 @@
   "description": "Harness Mixture-of-Experts de diseño UI/UX para opencode: investigación, sistema de diseño, wireframes, crítica con métricas y ejecución por slices",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "design-harness": "install.mjs"
+  },
   "engines": {
     "node": ">=18"
   },

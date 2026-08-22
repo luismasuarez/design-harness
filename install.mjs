@@ -6,11 +6,10 @@
  * en el proyecto destino, parametrizado por flags. Idempotente, reversible.
  *
  * Uso (dentro del proyecto destino):
- *   node <path>/design-harness/install.mjs
- *   node <path>/design-harness/install.mjs --write-paths "apps/web/src/**" --gates "pnpm typecheck;pnpm lint"
+ *   node <path>/design-harness/install.mjs [install] [flags]
+ *   npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"
+ *   npx design-harness install --install-skills          (una vez publicado en npm)
  *   node <path>/design-harness/install.mjs --check
- *   node <path>/design-harness/install.mjs --uninstall
- *   node <path>/design-harness/install.mjs --dry-run
  *
  * Flags:
  *   --project <dir>        Proyecto destino (default: cwd)
@@ -57,6 +56,8 @@ function expertSkillsFromManifest(m) {
 /* ---------- utilidades ---------- */
 
 function parseArgs(argv) {
+  // Subcomando opcional: `design-harness install --flag` == `design-harness --flag`
+  if (argv[0] === "install") argv = argv.slice(1)
   const args = { project: process.cwd(), writePaths: "src/**", gates: ["pnpm typecheck", "pnpm lint"], check: false, uninstall: false, dryRun: false, force: false, skipSkills: false, packageFilter: null, installSkills: false, skillsDir: join(homedir(), ".config", "opencode", "skills"), skillsSrcDir: null, skillsCheckDirs: null }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]

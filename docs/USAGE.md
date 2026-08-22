@@ -12,11 +12,15 @@ Guía para desarrolladores que instalan el harness en su proyecto.
 
 ## 2. Instalación
 
+**Un solo comando** (sin clonar el repo):
+
 ```bash
-git clone https://github.com/luismasuarez/design-harness
-cd tu-proyecto
-node /ruta/a/design-harness/install.mjs --write-paths "apps/web/src/**"
+npx design-harness install --write-paths "apps/web/src/**"
+# o, si el paquete aún no está publicado en npm:
+npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"
 ```
+
+Con el repo clonado: `node design-harness/install.mjs install <flags>` (equivalente).
 
 ### Flags principales
 
