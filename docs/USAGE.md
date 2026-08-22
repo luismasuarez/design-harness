@@ -44,7 +44,7 @@ El harness usa 3 skills para sus expertos: `ui-ux-pro-max`, `impeccable` y
 **Automático (recomendado)** — durante la instalación:
 
 ```bash
-node design-harness/install.mjs --install-skills
+npx ui-design-harness install --install-skills
 ```
 
 Clona cada repo fuente (`git clone --depth 1`) y copia la skill a
@@ -71,7 +71,7 @@ cp -r /tmp/impeccable/.agents/skills/impeccable ~/.config/opencode/skills/
 > `vercel-react-best-practices`). Con `--install-skills` no hay selección: copia
 > solo la skill declarada en el manifest.
 
-Después de cualquier vía: `node design-harness/install.mjs --check` y reinicia
+Después de cualquier vía: `npx ui-design-harness install --check` y reinicia
 opencode (el discovery de skills corre al arrancar).
 
 Sin las skills el harness degrada (el orquestador inyecta la metodología), pero
@@ -88,9 +88,9 @@ instálalas para calidad completa.
 /design settings-page "Mejora la página de ajustes: jerarquía, estados de carga y errores, UX copy. Respeta los contratos existentes y el design system del proyecto."
 ```
 
-1. El pipeline corre solo y se detiene en `docs/design/settings-page/design-proposal.md`
+4. El pipeline corre solo y se detiene en `docs/design/settings-page/design-proposal.md`
    esperando tu OK. Revisa la propuesta (slices, contratos, riesgos) y aprueba o pide cambios.
-2. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
+5. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
    Tú puedes detener el flujo en cualquier momento.
 
 ### Brief de ejemplo (listo para copiar)
@@ -126,38 +126,6 @@ Restricciones:
   explícita antes de implementar cualquier slice.
 ```
 
-```
-/design dev-profile
-
-Mejora la sección de perfil de usuario (DevProfilePage) en apps/console/src/features/dev/.
-El estado actual es una sola Card con formulario de lectura/edición: email (disabled),
-nombre, empresa, GitHub y teléfono. Quiero una propuesta de rediseño de nivel
-producto, no solo un maquillaje.
-
-Objetivos de la propuesta (evalúa cuáles aportan más valor, no implementes todos por inercia):
-1. Cabecera de perfil con avatar (iniciales o placeholder), nombre, empresa y estado
-   de cuenta; jerarquía visual clara.
-2. Layout de dos columnas (contenido principal + barra lateral) o secciones
-   visualmente diferenciadas: Datos personales / Empresa / Enlaces (GitHub, web) /
-   Preferencias.
-3. Mejorar estados: loading con skeleton realista, empty (sin datos), error con
-   retry, y feedback de guardado (éxito/error).
-4. UX copy en español LATAM neutral, tuteo, consistente con el resto de la consola.
-5. Respeta el design system del proyecto: usa DESIGN.md, tokens y componentes de
-   @/core/components/ui (shadcn). Nada de clases ad hoc fuera del sistema.
-
-Restricciones:
-- NO cambies contratos existentes: DevProfile, use-dev-profile, schema zod
-  (profileFormSchema) ni el endpoint del SDK. Cualquier cambio de campos debe
-  marcarse como propuesta opcional en la síntesis, nunca como requisito.
-- Los componentes deben seguir el patrón presentacional del código actual
-  (dumb components + hooks por separado).
-- Mantén el test existente profile-form.spec.tsx funcionando; si la propuesta
-  altera el formulario, incluye en el plan la actualización de tests como slice.
-- Solo propuesta: tras la síntesis (design-proposal.md) espera mi aprobación
-  explícita antes de implementar cualquier slice.
-```
-
 > Sustituye los marcadores `<apps/web/src/...>`, `<DevProfile>` y
 > `use-<entity>-profile` por los nombres reales de tu proyecto. El harness
 > investiga el contexto por sí solo: un brief corto ("mejora X respetando el
@@ -187,7 +155,7 @@ El `harness.manifest.json` del paquete es la fuente de verdad (roster, pipeline,
 gates, slices). Cámbialo y re-ejecuta:
 
 ```bash
-node /ruta/a/design-harness/install.mjs --force
+npx ui-design-harness install --force
 ```
 
 Para re-generar los artefactos desde el manifest usando el estándar completo,
@@ -198,8 +166,8 @@ puedes usar [harness-factory](https://github.com/luismasuarez/harness-factory)
 
 | Problema | Solución |
 |---|---|
-| No aparece el modo `Design-Orchestrator` | Reinicia opencode; verifica `node install.mjs --check` |
+| No aparece el modo `Design-Orchestrator` | Reinicia opencode; verifica `npx ui-design-harness install --check` |
 | El critique no audita el render | Verifica el MCP `chrome-devtools` habilitado; el critique degrada a snapshot de accesibilidad + métricas DOM |
 | Gates fallan en el baseline | El harness se detiene (tripwire) y reporta; corrige el baseline antes de continuar — es la red de seguridad |
 | El critique no ve imágenes | Es la vía compatible: audita el DOM renderizado con métricas medidas (`render-audit.js`); para auditoría visual de píxeles usa un modelo con visión |
-| Quieres deshacer | `node install.mjs --uninstall` revierte agents, comando, skill y golden rule; tus artefactos de `docs/design/` se conservan |
+| Quieres deshacer | `npx ui-design-harness install --uninstall` revierte agents, comando, skill y golden rule; tus artefactos de `docs/design/` se conservan |

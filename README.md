@@ -7,6 +7,7 @@ aprobación— implementa en el stack real de tu proyecto.
 Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro.
 
 ![License](https://img.shields.io/github/license/luismasuarez/design-harness)
+![Version](https://img.shields.io/github/v/tag/luismasuarez/design-harness)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-339933)
 ![Tests](https://img.shields.io/github/actions/workflow/status/luismasuarez/design-harness/test.yml?branch=main&label=tests)
 
@@ -30,8 +31,8 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 - [opencode](https://opencode.ai) con el MCP `chrome-devtools` configurado
 - Node ≥ 18
-- Skills de expertos (el instalador las verifica y te da el comando exacto):
-  `ui-ux-pro-max`, `impeccable`, `vercel-react-best-practices`
+- Skills de expertos: `ui-ux-pro-max`, `impeccable`, `vercel-react-best-practices`
+  — el instalador las verifica y las instala con `--install-skills`
 
 ## Instalación (en tu proyecto)
 
