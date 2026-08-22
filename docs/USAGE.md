@@ -55,9 +55,9 @@ instálalas para calidad completa.
 /design settings-page "Mejora la página de ajustes: jerarquía, estados de carga y errores, UX copy. Respeta los contratos existentes y el design system del proyecto."
 ```
 
-4. El pipeline corre solo y se detiene en `docs/design/settings-page/design-proposal.md`
+1. El pipeline corre solo y se detiene en `docs/design/settings-page/design-proposal.md`
    esperando tu OK. Revisa la propuesta (slices, contratos, riesgos) y aprueba o pide cambios.
-5. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
+2. Tras tu OK, el executor implementa slice por slice: gates verdes + commit por slice.
    Tú puedes detener el flujo en cualquier momento.
 
 ### Brief de ejemplo (listo para copiar)
@@ -89,6 +89,38 @@ Restricciones:
   (dumb components + hooks por separado).
 - Mantén los tests existentes funcionando; si la propuesta altera el formulario,
   incluye en el plan la actualización de tests como slice.
+- Solo propuesta: tras la síntesis (design-proposal.md) espera mi aprobación
+  explícita antes de implementar cualquier slice.
+```
+
+```
+/design dev-profile
+
+Mejora la sección de perfil de usuario (DevProfilePage) en apps/console/src/features/dev/.
+El estado actual es una sola Card con formulario de lectura/edición: email (disabled),
+nombre, empresa, GitHub y teléfono. Quiero una propuesta de rediseño de nivel
+producto, no solo un maquillaje.
+
+Objetivos de la propuesta (evalúa cuáles aportan más valor, no implementes todos por inercia):
+1. Cabecera de perfil con avatar (iniciales o placeholder), nombre, empresa y estado
+   de cuenta; jerarquía visual clara.
+2. Layout de dos columnas (contenido principal + barra lateral) o secciones
+   visualmente diferenciadas: Datos personales / Empresa / Enlaces (GitHub, web) /
+   Preferencias.
+3. Mejorar estados: loading con skeleton realista, empty (sin datos), error con
+   retry, y feedback de guardado (éxito/error).
+4. UX copy en español LATAM neutral, tuteo, consistente con el resto de la consola.
+5. Respeta el design system del proyecto: usa DESIGN.md, tokens y componentes de
+   @/core/components/ui (shadcn). Nada de clases ad hoc fuera del sistema.
+
+Restricciones:
+- NO cambies contratos existentes: DevProfile, use-dev-profile, schema zod
+  (profileFormSchema) ni el endpoint del SDK. Cualquier cambio de campos debe
+  marcarse como propuesta opcional en la síntesis, nunca como requisito.
+- Los componentes deben seguir el patrón presentacional del código actual
+  (dumb components + hooks por separado).
+- Mantén el test existente profile-form.spec.tsx funcionando; si la propuesta
+  altera el formulario, incluye en el plan la actualización de tests como slice.
 - Solo propuesta: tras la síntesis (design-proposal.md) espera mi aprobación
   explícita antes de implementar cualquier slice.
 ```
