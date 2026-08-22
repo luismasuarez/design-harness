@@ -38,11 +38,12 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 **Vía A — un solo comando (recomendada)**: sin clonar, desde tu proyecto:
 
 ```bash
-npx design-harness install --write-paths "apps/web/src/**" --install-skills
-npx design-harness install --check
+npx ui-design-harness install --write-paths "apps/web/src/**" --install-skills
+npx ui-design-harness install --check
 ```
 
-> Antes de publicar en npm, la vía equivalente es:
+> El bin se llama `design-harness`: `npx -p ui-design-harness design-harness install ...`.
+> Hasta publicar en npm, la vía equivalente es:
 > `npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"`
 
 **Vía B — clonando el repo**: igual de completa, con el código a mano:

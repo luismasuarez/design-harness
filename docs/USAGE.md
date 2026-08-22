@@ -15,7 +15,7 @@ Guía para desarrolladores que instalan el harness en su proyecto.
 **Un solo comando** (sin clonar el repo):
 
 ```bash
-npx design-harness install --write-paths "apps/web/src/**"
+npx ui-design-harness install --write-paths "apps/web/src/**"
 # o, si el paquete aún no está publicado en npm:
 npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"
 ```
