@@ -89,6 +89,25 @@ node design-harness/install.mjs install --force --package-filter "@org/console"
 # añade: pnpm --filter @org/console exec tsc -b --force
 ```
 
+## Autoevaluación del harness
+
+El harness se mejora a sí mismo: **`/harness-audit`** es un comando interno
+(disponible solo en el repo fuente `design-harness`) que repite la metodología
+de auditoría sobre las corridas reales — evidencia (DB de sesiones + logs +
+memoria) → análisis → propuesta → aprobación → aplicación → persistencia.
+
+```bash
+/harness-audit            # análisis + propuesta; espera tu OK antes de tocar
+/harness-audit --apply    # aplica directo
+/harness-audit --report   # solo reporte de incidentes
+```
+
+La metodología vive en `.opencode/skills/harness-audit/SKILL.md` y el helper de
+evidencia en `skills/design-orchestrator/scripts/collect-incidents.mjs`
+(clasifica incidentes: provider_transient, permission_denial, task_cancelled,
+tool_error, write_truncation). Cada ciclo deja su sección en
+[`docs/IMPROVEMENTS.md`](./docs/IMPROVEMENTS.md) y una observación en Engram.
+
 ## Hallazgos y mejoras
 
 Análisis empírico de las corridas reales y las correcciones de la v1.1
