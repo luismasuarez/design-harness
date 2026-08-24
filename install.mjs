@@ -318,6 +318,7 @@ function buildConfig(manifestData, args) {
 
 const GOLDEN_START = "<!-- DESIGN-HARNESS START -->"
 const GOLDEN_END = "<!-- DESIGN-HARNESS END -->"
+const LEGACY_GOLDEN_HEADER = "## Golden Rule: el trabajo de diseño UI/UX pasa por el harness design-harness"
 
 function goldenRuleBlock() {
   return `${GOLDEN_START}
@@ -440,6 +441,11 @@ function upsertGoldenRule(project, force) {
   if (content.includes(GOLDEN_START)) {
     return force ? { action: "replace", path } : { action: "skip", path }
   }
+  if (content.includes(LEGACY_GOLDEN_HEADER)) {
+    // Bloque v1.0 sin marcadores START/END (instalado antes de que el
+    // instalador los usara). Reemplazarlo para NO duplicar la golden rule.
+    return force ? { action: "replace-legacy", path } : { action: "skip-legacy", path }
+  }
   return { action: "append", path }
 }
 
@@ -447,8 +453,9 @@ function stripGoldenRule(project) {
   const path = join(project, "AGENTS.md")
   if (!existsSync(path)) return { action: "skip", path }
   const content = readFileSync(path, "utf8")
-  if (!content.includes(GOLDEN_START)) return { action: "skip", path }
-  return { action: "strip", path }
+  if (content.includes(GOLDEN_START)) return { action: "strip", path }
+  if (content.includes(LEGACY_GOLDEN_HEADER)) return { action: "strip-legacy", path }
+  return { action: "skip", path }
 }
 
 /* ---------- main ---------- */
@@ -505,6 +512,12 @@ function main() {
       const next = content.slice(0, start).trimEnd() + "\n" + content.slice(end).replace(/^\n+/, "")
       writeFileSync(golden.path, next)
       log("ok", `${golden.path} — bloque golden rule removido`)
+    } else if (golden.action === "strip-legacy") {
+      const content = readFileSync(golden.path, "utf8")
+      const start = content.indexOf(LEGACY_GOLDEN_HEADER)
+      const next = content.slice(0, start).trimEnd() + "\n"
+      writeFileSync(golden.path, next)
+      log("ok", `${golden.path} — bloque golden rule legacy (v1.0) removido`)
     } else {
       log("skip", "golden rule ausente")
     }
@@ -555,7 +568,7 @@ function main() {
     log("ok", `${skillDir} — skill + scripts instalados`)
   }
 
-  if (golden.action === "skip") {
+  if (golden.action === "skip" || golden.action === "skip-legacy") {
     log("skip", `${golden.path} — golden rule ya presente`)
   } else {
     const content = golden.action === "create" ? "" : readFileSync(golden.path, "utf8")
@@ -564,9 +577,11 @@ function main() {
       ? content.replace(/\s*$/, "\n") + "\n" + block + "\n"
       : golden.action === "replace"
         ? content.replace(/\n?<!-- DESIGN-HARNESS START -->[\s\S]*?<!-- DESIGN-HARNESS END -->\n?/, "\n" + block + "\n")
-        : block + "\n"
+        : golden.action === "replace-legacy"
+          ? content.slice(0, content.indexOf(LEGACY_GOLDEN_HEADER)).trimEnd() + "\n\n" + block + "\n"
+          : block + "\n"
     writeFileSync(golden.path, next)
-    log("ok", `${golden.path} — golden rule ${golden.action === "create" ? "creada" : golden.action}`)
+    log("ok", `${golden.path} — golden rule ${golden.action === "create" ? "creada" : golden.action === "replace-legacy" ? "reemplazada (legacy)" : golden.action}`)
   }
 
   mkdirSync(docsDir, { recursive: true })

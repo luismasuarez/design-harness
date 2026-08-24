@@ -167,3 +167,25 @@ test("--install-skills reporta error si el skillPath no existe en el repo fuente
   assert.equal(r.status, 0, "el instalador no falla; reporta warning")
   assert.ok(r.stdout.includes("NO instalada"), r.stdout)
 })
+
+test("migra la golden rule legacy v1.0 (sin marcadores) sin duplicarla", () => {
+  const legacy = `# Proyecto falso
+
+Texto existente.
+
+## Golden Rule: el trabajo de diseño UI/UX pasa por el harness design-harness
+
+Cualquier tarea que involucre **generar propuestas de diseño UI/UX iterativas** DEBE pasar por el harness design-harness (Mixture of Experts).
+
+**Trigger**: ejecuta \`/design <scope>\` o carga la skill \`design-orchestrator\`.
+
+**Nunca evites el harness** haciendo este trabajo ad hoc.
+`
+  writeFileSync(join(project, "AGENTS.md"), legacy)
+  const r = run("--force")
+  assert.equal(r.status, 0, r.stderr)
+  const agents = readFileSync(join(project, "AGENTS.md"), "utf8")
+  assert.equal(agents.split("<!-- DESIGN-HARNESS START -->").length - 1, 1, "un solo bloque con marcador")
+  assert.equal(agents.split("## Golden Rule: el trabajo de diseño UI/UX pasa por el harness design-harness").length - 1, 1, "una sola golden rule, sin duplicado legacy")
+  assert.ok(agents.includes("<!-- DESIGN-HARNESS END -->"), "bloque cerrado")
+})
