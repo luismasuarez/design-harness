@@ -104,6 +104,9 @@ function renderExpertPrompt(expert, scopeDir) {
     .map((i) => (typeof i === "string" ? i : i.ref))
     .join(", ")
   const override = expert.overrides?.prompt ? `\n- ${expert.overrides.prompt.replace(/\n/g, "\n- ")}` : ""
+  const empirical = expert.id === "expert-research"
+    ? `\n- VERIFICACIÓN EMPÍRICA: todo supuesto y todo gap cerrado como "no-gap" DEBE citar evidencia (archivo:línea o comando real ejecutado). Lo que no se pueda verificar se marca como "abierto/requiere verificación" — nunca lo des por cerrado por fe. Si existe una fuente funcional (otro proyecto, CLI propio, backend desplegado), verifica contra ella. Un gap mal cerrado en research cuesta un fix post-freeze.`
+    : ""
   return [
     `You are the ${expert.roleLabel} expert in the ${HARNESS_NAME} harness.`,
     ``,
@@ -118,16 +121,13 @@ function renderExpertPrompt(expert, scopeDir) {
     `HARD CONSTRAINTS:`,
     `- You are READ-ONLY on code: you may ONLY write inside the docs/design/ directory. Never edit source files.`,
     `- Never run installs, migrations or destructive commands.`,
+    `${empirical}`,
     `${override}`,
     `- Return a concise summary to the orchestrator: ${expert.summary}.`,
   ].filter((l) => l.trim() !== "" || l === "").join("\n")
 }
 
 function renderExecutorPrompt(executor, gates, writePaths) {
-  const gateLines = gates.map((g) => {
-    const [cmd, ...rest] = g.split(" ")
-    return `- ${g}: gate ${rest.includes("typecheck") ? "typecheck" : ""}`.trim()
-  })
   const gateBlock = gates
     .map((g, i) => `${i + 1}. \`${g}\``)
     .join("\n")
@@ -144,13 +144,15 @@ function renderExecutorPrompt(executor, gates, writePaths) {
     `- A gate with expect "green" must exit 0.`,
     `- A gate with expect "no-new-errors" must show NO NEW errors over the baseline count given in your task prompt. If the tool auto-fixes files, revert ONLY the known alien files listed in your task prompt with git checkout --; NEVER revert the slice files (formatting mutations on slice files stay; document them).`,
     `- If any gate is red: revert the slice per the blueprint's rollback section and report — never commit a red slice.`,
+    `- Run gates with --force/--no-cache when available (turbo caches y puede dar falsos verdes).`,
+    ``,
+    `POST-WRITE VERIFICATION: after writing each NEW/MOD file, confirm it exists on disk and is non-trivial (git status --short debe listarlo). If a written file is missing from the tree, rewrite it and report the incident.`,
     ``,
     `COMMIT (only when all gates are green): stage ONLY the slice paths listed in the blueprint + the blueprint artifact itself; commit message exactly as given in your task prompt. Never git add -A/git add ., never amend, never push.`,
     ``,
     `HARD CONSTRAINTS: no migrations, no prisma generate, no dependency installs, no edits outside ${writePaths} unless the blueprint says so.`,
-    `If any tool call is permission-denied, STOP and report the denial verbatim — do not work around it.`,
     ``,
-    `RETURN to the orchestrator: (a) files applied (NEW/MOD), (b) per-gate results with the REAL numbers recorded, (c) commit hash, (d) final git status --short, (e) any deviation from the blueprint and why.`,
+    `RETURN to the orchestrator: (a) files applied (NEW/MOD) — verify each exists on disk, (b) per-gate results with the REAL numbers recorded, (c) commit hash, (d) final git status --short, (e) any deviation from the blueprint and why.`,
   ].join("\n")
 }
 
@@ -164,20 +166,24 @@ function renderOrchestratorPrompt(gates, packageFilter) {
     ``,
     `PIPELINE (run in strict order, delegating each phase via the Task tool to the expert subagents):`,
     ``,
-    `0. BASELINE (gate): verify git status is clean, then run the baseline gates: ${gateList}${pf}. Record the baseline commit SHA. If the baseline is not green, STOP and report — never proceed on a red baseline.`,
+    `0. RESUME CHECK: if docs/design/<scope>/RUN-STATE.json exists, read it and resume from the pending phase (verify artifacts on disk; re-run only what is missing). If not, start fresh.`,
+    `0. BASELINE (gate): verify git status is clean, then run the baseline gates: ${gateList}${pf} with --force/--no-cache when available (turbo cachea y puede dar falsos verdes). Record the baseline commit SHA. If the baseline is not green, STOP and report — never proceed on a red baseline.`,
     `0.5. Create the artifacts directory: mkdir -p docs/design/<scope>.`,
-    `1. Delegate to expert-research: (brief, audiencia, contexto visual del proyecto, mapa de pantallas). Handoff: pasa el scope y la ruta docs/design/<scope>/research.md.`,
+    `0.6. CHECKPOINT: after EVERY completed phase, write/update docs/design/<scope>/RUN-STATE.json with: current phase, baseline SHA, artifacts written (path + size), subagents completed, critique threshold. This allows resuming after network/provider cuts without auditing the tree by hand.`,
+    `1. Delegate to expert-research: (brief, audiencia, contexto visual del proyecto, mapa de pantallas). Handoff: pasa el scope y la ruta docs/design/<scope>/research.md. El research DEBE verificar empíricamente todo supuesto y "no-gap" (citar archivo:línea o comando real); lo que no se verifica se marca abierto. Si existe una fuente funcional (otro proyecto, CLI propio), se verifica contra ella.`,
     `2. Delegate to expert-design-system: (estilo, paleta, tipografía, tokens, anti-patrones — input: research). Handoff: pasa research.md como input, ruta de salida docs/design/<scope>/design-system.md.`,
     `3. Delegate to expert-wireframe: (wireframes por pantalla, layouts.md, wireframe.html lo-fi — inputs: research + design-system). Handoff: pasa ambos artifacts como inputs, rutas de salida bajo docs/design/<scope>/.`,
-    `4. Delegate to expert-critique: (ronda 1 — score por heurísticas sobre wireframes + layouts. ANTES de delegar, el orquestador renderiza wireframe.html en chrome-devtools y captura screenshots a docs/design/<scope>/screenshots/). Handoff: pasa wireframes + layouts + screenshots como inputs, ruta de salida docs/design/<scope>/critique.md.`,
+    `4. Delegate to expert-critique: (ronda 1 — score por heurísticas sobre wireframes + layouts. ANTES de delegar, el orquestador renderiza wireframe.html en chrome-devtools y prepara SIEMPRE evidencia ligera: screenshots en JPEG <= 250KB + snapshot de accesibilidad (a11y) + JSON de render-audit.js; guarda todo en docs/design/<scope>/screenshots/. Prohíbe al critique leer PNG/archivos > 500KB (bloquea subagentes sin visión). Handoff: pasa wireframes + layouts + screenshots como inputs, ruta de salida docs/design/<scope>/critique.md.`,
     `5. Delegate to expert-wireframe: (ronda 2 — SOLO si el score de critique < umbral: refina wireframes con critique.md como input; si el score es aceptable, se omite). Handoff: pasa critique.md como input.`,
     `6. Delegate to expert-critique: (ronda 2 — re-evaluación final si hubo ronda 2; se omite si no hubo). Handoff: re-audita los wireframes refinados.`,
     ``,
     `HANDOFF RULE: every Task delegation MUST include the scope name and the exact artifact path so the expert writes into the right subfolder. Pass the prior artifacts' full paths as inputs.`,
     ``,
-    `Synthesis (gate): consolidate all artifacts into docs/design/<scope>/design-proposal.md as surgical slices — un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit. PRESENT the plan and STOP for user approval.`,
+    `RETRY POLICY: if a delegated subagent fails with a transient error (Upstream request failed, Endpoint is unavailable, network_error, invalid_request, response was not valid JSON), RETRY up to 3 times with backoff, resuming the SAME task_id if possible. Only after 3 failures apply the fail-safe rule (load the expert's skill yourself and inject its methodology). Record each retry in RUN-STATE.json and in the final report.`,
     ``,
-    `EXECUTION (only after approval): delegate each slice to the executor subagent via the Task tool (blueprint = design-proposal.md + the exact slice). Never apply source edits yourself in this phase — you only validate the executor's return (files applied, per-gate results, commit hash, final git status). If a slice leaves the tree red, have it reverted before continuing.`,
+    `Synthesis (gate): consolidate all artifacts into docs/design/<scope>/design-proposal.md as surgical slices — un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit. OBLIGATORIO: cuando el scope es una pantalla/sección, incluye un slice final de INTEGRACIÓN (conectar los componentes en la página real: routing, data fetching, estados loading/empty/error) — los slices por componente sin integración dejan la UI vacía aunque las gates pasen verdes. PRESENT the plan and STOP for user approval.`,
+    ``,
+    `EXECUTION (only after approval): delegate each slice to the executor subagent via the Task tool (blueprint = design-proposal.md + the exact slice). Never apply source edits yourself in this phase — you only validate the executor's return (files applied and confirmed on disk, per-gate results, commit hash, final git status). If a slice leaves the tree red, have it reverted before continuing. After the integration slice, verify the page actually renders (dev server + snapshot via chrome-devtools) before declaring the scope done.`,
     ``,
     `HARD CONSTRAINTS:`,
     `- You are the ONLY agent allowed to edit source code, and only after approval. In the execution phase, however, delegate EVERY slice to the executor via the Task tool — never apply source edits yourself; you only validate the return.`,
@@ -190,7 +196,29 @@ function renderOrchestratorPrompt(gates, packageFilter) {
 /* ---------- permisos ---------- */
 
 function expertPermissions(expert) {
-  const bashAllow = ["git *", "ls *", "find *", "cat *", "rg *"]
+  // Deny por defecto bloqueó decenas de comandos de inspección (wc, grep, sed,
+  // node -e, pipes...) en las corridas reales. Ampliamos el allow con las
+  // herramientas estándar de lectura/verificación y pasamos el resto a "ask"
+  // (supervisado) en vez de deny silencioso.
+  const bashAllow = [
+    "git *",
+    "git show *",
+    "git log *",
+    "git diff *",
+    "ls *",
+    "find *",
+    "cat *",
+    "rg *",
+    "grep *",
+    "wc *",
+    "sed *",
+    "file *",
+    "head *",
+    "tail *",
+    "mkdir *",
+    "node *",
+    "npx *",
+  ]
   if (expert.skills.includes("ui-ux-pro-max")) bashAllow.push("python3 *")
   if (expert.skills.includes("impeccable")) {
     bashAllow.push("npx impeccable *", "node .opencode/skills/impeccable/scripts/*")
@@ -198,16 +226,42 @@ function expertPermissions(expert) {
   const skillAllow = Object.fromEntries(expert.skills.map((s) => [s, "allow"]))
   return {
     edit: { "*": "deny", "docs/design/**": "allow" },
-    bash: { "*": "deny", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
+    bash: { "*": "ask", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
     skill: { "*": "deny", ...skillAllow },
   }
 }
 
 function executorPermissions(writePaths) {
-  const bashAllow = ["git *", "pnpm *", "npm *", "yarn *", "ls *", "find *", "cat *", "rg *", "grep *", "wc *", "rm *", "mkdir *"]
+  const bashAllow = [
+    "git *",
+    "git show *",
+    "git log *",
+    "git diff *",
+    "git status *",
+    "pnpm *",
+    "npm *",
+    "yarn *",
+    "node *",
+    "npx *",
+    "python3 *",
+    "ls *",
+    "find *",
+    "cat *",
+    "rg *",
+    "grep *",
+    "wc *",
+    "sed *",
+    "cp *",
+    "mv *",
+    "rm *",
+    "file *",
+    "mkdir *",
+    "head *",
+    "tail *",
+  ]
   return {
     edit: { "*": "deny", [writePaths]: "allow", "docs/**": "allow" },
-    bash: { "*": "deny", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
+    bash: { "*": "ask", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
     skill: { "*": "allow" },
   }
 }
@@ -465,6 +519,12 @@ function main() {
   }
 
   // Instalación
+  if (args.packageFilter && !args.gates.some((g) => g.includes("tsc -b"))) {
+    // El typecheck raíz de un monorepo (turbo) NO cubre paquetes sin script
+    // "typecheck" (p.ej. el console usa tsc -b dentro del build). Si hay
+    // --package-filter, añadimos el gate del paquete automáticamente.
+    args.gates.push(`pnpm --filter ${args.packageFilter} exec tsc -b --force`)
+  }
   const built = buildConfig(m, args)
   const { path: cfgPath, cfg } = readAgentsConfig(project)
   const merged = mergeConfig(cfg, built)

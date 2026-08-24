@@ -28,7 +28,7 @@ Con el repo clonado: `node design-harness/install.mjs install <flags>` (equivale
 |---|---|---|
 | `--write-paths` | `src/**` | Dónde puede escribir el executor (el código que implementa) |
 | `--gates "a;b"` | `pnpm typecheck;pnpm lint` | Gates del baseline y de cada slice |
-| `--package-filter` | — | Prefijo de paquete del monorepo (ej: `@org/console`) |
+| `--package-filter` | — | Prefijo de paquete del monorepo (ej: `@org/console`) — añade automáticamente `pnpm --filter <pkg> exec tsc -b --force` al gate, cubriendo paquetes sin script `typecheck` (el typecheck raíz de turbo no los cubre) |
 | `--install-skills` | — | Instala automáticamente las skills de expertos faltantes (clona el repo fuente y copia la skill al dir global de opencode) |
 | `--skills-dir` | `~/.config/opencode/skills` | Directorio destino de las skills instaladas por `--install-skills` |
 | `--check` | — | Diagnóstico de instalación (exit 0 = completa) |
@@ -169,5 +169,11 @@ puedes usar [harness-factory](https://github.com/luismasuarez/harness-factory)
 | No aparece el modo `Design-Orchestrator` | Reinicia opencode; verifica `npx ui-design-harness install --check` |
 | El critique no audita el render | Verifica el MCP `chrome-devtools` habilitado; el critique degrada a snapshot de accesibilidad + métricas DOM |
 | Gates fallan en el baseline | El harness se detiene (tripwire) y reporta; corrige el baseline antes de continuar — es la red de seguridad |
-| El critique no ve imágenes | Es la vía compatible: audita el DOM renderizado con métricas medidas (`render-audit.js`); para auditoría visual de píxeles usa un modelo con visión |
+| El critique no ve imágenes | Es la vía compatible: audita el DOM renderizado con métricas medidas (`render-audit.js`); el orquestador ya prepara evidencia ligera (JPEG ≤ 250KB + a11y + JSON) para evitar que el critique lea PNG grandes que lo bloquean; para auditoría visual de píxeles usa un modelo con visión |
+| Gates verdes "falsos" (turbo cache) | El harness corre las gates con `--force`/`--no-cache` cuando están disponibles; si sospechas un falso verde, re-corre el comando a mano sin caché |
+| Comandos bash bloqueados en expertos/executor | El perfil de permisos usa allow para la inspección estándar (node, python3, wc, grep, sed, cp, mv, file, mkdir, git show/log/diff, etc.) y `ask` para el resto; si un comando con `pipe \|` no matchea un allow, usa redirección a un archivo temporal o pide aprobación |
+| El pipeline se cortó por red/suscripción | Reanuda con `/design <scope>` (mismo scope): el orquestador lee `docs/design/<scope>/RUN-STATE.json` y continúa desde la fase pendiente sin re-auditar el árbol |
+| Un subagente falla con "Endpoint is unavailable"/"network_error" | Es un fallo transitorio del proveedor: el orquestador reintenta hasta 3 veces reanudando el mismo `task_id`; si persiste, degrada inyectando la metodología de la skill manualmente |
+| Un archivo recién escrito desapareció del disco | Incidente observado (causa indeterminada): el executor verifica post-escritura que cada archivo existe y aparece en `git status`; si se repite, reescríbelo y reporta. Revisa también que el directorio no esté en `.gitignore` |
+| La página quedó vacía tras implementar los slices | La propuesta debe incluir un slice de integración (conectar componentes en la página real); si falta, añádelo y verifica el render real con el dev server antes de cerrar el scope |
 | Quieres deshacer | `npx ui-design-harness install --uninstall` revierte agents, comando, skill y golden rule; tus artefactos de `docs/design/` se conservan |

@@ -78,6 +78,24 @@ Edita `harness.manifest.json` del paquete (roster, pipeline, gates) y re-ejecuta
 el instalador con `--force`. El manifest es la fuente de verdad (estándar
 [harness-factory](https://github.com/luismasuarez/harness-factory)).
 
+### Monorepos: gate de typecheck del paquete de UI
+
+El typecheck raíz de un monorepo (turbo) no cubre paquetes sin script
+`typecheck` (p.ej. un console que usa `tsc -b` dentro del build). Pasa el prefijo
+del paquete y el instalador añade la gate correcta:
+
+```bash
+node design-harness/install.mjs install --force --package-filter "@org/console"
+# añade: pnpm --filter @org/console exec tsc -b --force
+```
+
+## Hallazgos y mejoras
+
+Análisis empírico de las corridas reales y las correcciones de la v1.1
+(checkpoints, reintentos, permisos, gates por-paquete, slice de integración,
+evidencia ligera para la crítica, telemetría de incidentes): ver
+[`docs/IMPROVEMENTS.md`](./docs/IMPROVEMENTS.md).
+
 ## Métricas post-run
 
 ```bash
@@ -85,9 +103,15 @@ node .opencode/skills/design-orchestrator/scripts/run-metrics.mjs --scope <scope
 ```
 
 Genera `docs/design/shared/run-metrics-<scope>.{json,md}`: tokens por agente,
-costo, delegaciones, contexto del orquestador, calidad. Los umbrales del reporte
+costo, delegaciones, contexto del orquestador, calidad **e incidentes**
+(reintentos por proveedor, denials de permisos, cancelaciones — ver
+[`docs/IMPROVEMENTS.md`](./docs/IMPROVEMENTS.md)). Los umbrales del reporte
 son del caso de referencia (abajo) — números crudos para comparar entre modelos
 y sistemas.
+
+> La estimación de contexto `input − cache_read` no es fiable en corridas largas
+> (da 0 cuando cache_read ≥ input). Pasa `--observed-context-pct <n>` con el % que
+> viste en la UI para un valor real.
 
 ## Caso de referencia
 

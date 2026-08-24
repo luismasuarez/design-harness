@@ -109,16 +109,72 @@ function messagesCount(db, sessionId) {
   return db.prepare("SELECT COUNT(*) AS n FROM message WHERE session_id = ?").get(sessionId).n
 }
 
+/** Clasifica un error de tool (texto) por categoría operativa. */
+function classifyError(tool, err) {
+  const e = (err ?? "").toLowerCase()
+  if (tool === "task" && e.includes("cancelled")) return "task_cancelled"
+  if (e.includes("rule which prevents")) return "permission_denial"
+  if (/upstream request failed|endpoint is unavailable|network_error|invalid_request|not valid json|finish_reason/.test(e)) return "provider_transient"
+  if (tool === "task") return "task_error"
+  return "tool_error"
+}
+
+/**
+ * Recorre los tool calls con status "error" de una sesión (y sus subsesiones)
+ * y los clasifica por categoría y por subagente. Evidencia empírica de los
+ * puntos de fricción del harness (reintentos, denials, cancelaciones).
+ */
+function listIncidents(db, sessionId) {
+  const sessions = [
+    ...db.prepare("SELECT id, agent FROM session WHERE id = ?").all(sessionId),
+    ...db.prepare("SELECT id, agent FROM session WHERE parent_id = ?").all(sessionId),
+  ]
+  const counts = {} // { agent: { category: n } }
+  const providerTransients = []
+  for (const s of sessions) {
+    const parts = db.prepare("SELECT data FROM part WHERE session_id = ?").all(s.id)
+    for (const p of parts) {
+      let d
+      try { d = JSON.parse(p.data) } catch { continue }
+      if (d?.type !== "tool" || d?.state?.status !== "error") continue
+      const tool = d.tool ?? "?"
+      const err = d.state?.error ?? ""
+      const cat = classifyError(tool, err)
+      counts[s.agent ?? s.id.slice(0, 8)] = counts[s.agent ?? s.id.slice(0, 8)] ?? {}
+      counts[s.agent ?? s.id.slice(0, 8)][cat] = (counts[s.agent ?? s.id.slice(0, 8)][cat] ?? 0) + 1
+      if (cat === "provider_transient") {
+        providerTransients.push({ session: s.id, tool, err: String(err).slice(0, 120) })
+      }
+    }
+  }
+  return { counts, providerTransients }
+}
+
+function summarizeIncidents(incidents) {
+  const total = {}
+  for (const byAgent of Object.values(incidents.counts)) {
+    for (const [cat, n] of Object.entries(byAgent)) total[cat] = (total[cat] ?? 0) + n
+  }
+  return total
+}
+
 function findScore(scope) {
   const file = join(process.cwd(), "docs", "design", scope, "critique.md")
   if (!existsSync(file)) return null
   const text = readFileSync(file, "utf8")
   const lines = text.split("\n")
+  // Formato unificado del harness: "Score: X/10" (una línea, al final).
+  // Fallback a formatos históricos (X/5, X/40, X/25, "35/40").
   let score = null
   for (const line of lines) {
-    // última mención del veredicto: "4.38 / 5" o "APROBADO"
-    const m = line.match(/(\d+\.\d+)\s*\/\s*5/)
-    if (m) score = parseFloat(m[1])
+    const unified = line.match(/Score\s*[:=]\s*(\d+(?:\.\d+)?)\s*\/\s*10/i)
+    if (unified) { score = parseFloat(unified[1]); break }
+  }
+  if (score == null) {
+    for (const line of lines) {
+      const m = line.match(/(\d+(?:\.\d+)?)\s*\/\s*(?:5|10|25|40)\b/)
+      if (m) score = parseFloat(m[1])
+    }
   }
   return score
 }
@@ -151,12 +207,18 @@ function main() {
   const roundsCritique = byAgent.filter((s) => s.agent === "expert-critique").length
   const executorDelegated = delegations.some((d) => d.subagent === "executor")
 
-  // Ventana del orquestador: estimación desde cache + autorreporte opcional
+  // Ventana del orquestador: estimación desde cache + autorreporte opcional.
+  // OJO: input - cache_read puede dar 0 (cache_read >> input en corridas largas)
+  // y NO es una estimación fiable — el valor observado en UI es el primario.
   const contextTokens = Math.max(0, (run.tokens_input ?? 0) - (run.tokens_cache_read ?? 0))
-  const contextPctEstimated = Math.round((contextTokens / args.windowTokens) * 1000) / 10
-  const contextPct = args.observedContextPct ?? contextPctEstimated
+  const contextPctEstimated = contextTokens > 0
+    ? Math.round((contextTokens / args.windowTokens) * 1000) / 10
+    : null
+  const contextPct = args.observedContextPct ?? contextPctEstimated ?? 0
 
-  const score = findScore(args.scope)
+  const score = args.scope ? findScore(args.scope) : null
+  const incidents = listIncidents(db, runId)
+  const incidentSummary = summarizeIncidents(incidents)
 
   const metrics = {
     scope: args.scope ?? run.title,
@@ -178,7 +240,7 @@ function main() {
       durationMs: (run.time_updated ?? run.time_created) - run.time_created,
       messages: messagesCount(db, runId),
       contextPct: contextPct,
-      contextPctSource: args.observedContextPct != null ? "observado (UI)" : "estimado (input-cache)",
+      contextPctSource: args.observedContextPct != null ? "observado (UI)" : (contextPctEstimated != null ? "estimado (input-cache)" : "no estimable (cache_read >= input; usa --observed-context-pct)"),
       contextPctEstimated: contextPctEstimated,
       contextTokens: contextTokens,
       contextPctAlert: contextPct > 15 ? true : false,
@@ -209,6 +271,12 @@ function main() {
       approved: score != null ? score >= 4.0 : null,
       approvalRounds: args.approvalRounds,
       tripwires: args.tripwires,
+    },
+    incidents: {
+      total: incidentSummary,
+      byAgent: incidents.counts,
+      providerTransients: incidents.providerTransients,
+      note: "provider_transient = fallo de red/proveedor (reintentable); permission_denial = herramienta bash bloqueada por el perfil de permisos; task_cancelled = delegación cancelada.",
     },
     generatedAt: new Date().toISOString(),
   }
@@ -270,10 +338,16 @@ ${metrics.subagents.map((s) => `| ${s.agent} | ${s.tokensInput.toLocaleString()}
 | Métrica | Valor |
 |---|---|
 | Rondas de crítica | ${metrics.quality.critiqueRounds} |
-| Score final | ${metrics.quality.finalScore ?? "—"} / 5 (umbral ${metrics.quality.threshold}) |
+| Score final | ${metrics.quality.finalScore ?? "—"} / 10 (umbral ${metrics.quality.threshold}) |
 | Aprobado | ${metrics.quality.approved === null ? "—" : metrics.quality.approved ? "sí" : "no"} |
 | Vueltas de aprobación | ${metrics.quality.approvalRounds} |
 | Tripwires disparadas | ${metrics.quality.tripwires} |
+
+## Incidentes (tool errors)
+
+${Object.entries(incidentSummary).length ? Object.entries(incidentSummary).map(([k, v]) => `- ${k}: ${v}`).join("\n") : "- ninguno"}
+
+${Object.entries(incidents.counts).length ? "\nDetalle por agente:\n" + Object.entries(incidents.counts).map(([a, cats]) => `- ${a}: ${Object.entries(cats).map(([c, n]) => `${c}=${n}`).join(", ") || "—"}`).join("\n") : ""}
 
 *Generado por \`scripts/run-metrics.mjs\`.*
 `

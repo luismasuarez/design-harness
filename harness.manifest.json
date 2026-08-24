@@ -107,7 +107,31 @@
       "description": "Implementa los slices de diseño aprobados en el stack del proyecto",
       "writePaths": ["src/**"],
       "readPaths": ["docs/design/**"],
-      "bash": ["pnpm *", "pnpm typecheck", "pnpm lint", "npm *", "yarn *"],
+      "bash": [
+        "pnpm *",
+        "pnpm typecheck",
+        "pnpm lint",
+        "npm *",
+        "yarn *",
+        "git *",
+        "node *",
+        "npx *",
+        "python3 *",
+        "ls *",
+        "find *",
+        "cat *",
+        "rg *",
+        "grep *",
+        "wc *",
+        "sed *",
+        "cp *",
+        "mv *",
+        "rm *",
+        "file *",
+        "mkdir *",
+        "head *",
+        "tail *"
+      ],
       "gates": {
         "dir": ".",
         "commands": [
@@ -116,6 +140,12 @@
             "command": "pnpm typecheck",
             "expect": "green",
             "notes": "typecheck del proyecto"
+          },
+          {
+            "name": "console-typecheck",
+            "command": "{{console-typecheck}}",
+            "expect": "green",
+            "notes": "typecheck del paquete de UI (p.ej. tsc -b del console). Resuelto por install.mjs desde --package-filter/--gates; se omite si no se configura."
           },
           {
             "name": "lint",
@@ -153,6 +183,12 @@
             "notes": "typecheck del proyecto"
           },
           {
+            "name": "console-typecheck",
+            "command": "{{console-typecheck}}",
+            "expect": "green",
+            "notes": "typecheck del paquete de UI (tsc -b). Resuelto por install.mjs; se omite si no se configura."
+          },
+          {
             "name": "lint",
             "command": "pnpm lint",
             "expect": "no-new-errors",
@@ -166,6 +202,11 @@
         "type": "mkdir",
         "path": "docs/design/<scope>",
         "description": "(directorio de artefactos del scope, incluido screenshots/)"
+      },
+      {
+        "type": "checkpoint",
+        "path": "docs/design/<scope>/RUN-STATE.json",
+        "description": "(estado del pipeline: fase actual, baseline SHA, artefactos escritos, reintentos. Permite reanudar tras cortes de red/suscripción sin auditar el árbol a mano. Fase 0: si RUN-STATE.json existe, reanudar desde la fase pendiente en vez de empezar de cero.)"
       },
       {
         "type": "delegate",
@@ -213,7 +254,7 @@
     },
     "execution": {
       "mode": "slices",
-      "sliceRule": "un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit",
+      "sliceRule": "un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit. OBLIGATORIO: cuando el scope es una pantalla/sección, la propuesta debe incluir un slice final de INTEGRACIÓN (conectar los componentes en la página real: routing, data fetching, estados loading/empty/error) — los slices por componente sin integración dejan la UI vacía aunque las gates pasen verdes.",
       "perSliceGates": {
         "dir": ".",
         "commands": [
@@ -221,6 +262,12 @@
             "name": "typecheck",
             "command": "pnpm typecheck",
             "expect": "green"
+          },
+          {
+            "name": "console-typecheck",
+            "command": "{{console-typecheck}}",
+            "expect": "green",
+            "notes": "se omite si no se configura"
           },
           {
             "name": "lint",
