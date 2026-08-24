@@ -1,3 +1,13 @@
 node_modules/
 *.log
 .DS_Store*.tgz
+
+# Markers de runtime del instalador (timestamp por instalación)
+.design-harness-installed.json
+
+# Copias de skills de experto en la auto-instalación del repo fuente:
+# la fuente de verdad es skills/vendor/ (se regeneran con dh install --force)
+.opencode/skills/ui-ux-pro-max/
+.opencode/skills/impeccable/
+.opencode/skills/vercel-react-best-practices/
+.opencode/skills/vercel-react-native-skills/

@@ -31,15 +31,20 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
 
 - [opencode](https://opencode.ai) con el MCP `chrome-devtools` configurado
 - Node ≥ 18
+- Python 3 (para los scripts de la skill `ui-ux-pro-max`)
 - Skills de expertos: `ui-ux-pro-max`, `impeccable`, `vercel-react-best-practices`
-  — el instalador las verifica y las instala con `--install-skills`
+  y `vercel-react-native-skills` — **van embebidas** en el paquete
+  (`skills/vendor/`) y el instalador las copia a cada proyecto según `--stack`.
+  No necesitas instalarlas aparte. `--stack web|mobile|both` decide cuáles: la
+  de Vercel web se instala en targets web, la de React Native/Expo en móviles
+  (`both` instala ambas).
 
 ## Instalación (en tu proyecto)
 
 **Vía A — un solo comando (recomendada)**: sin clonar, desde tu proyecto:
 
 ```bash
-npx ui-design-harness install --write-paths "apps/web/src/**" --install-skills
+npx ui-design-harness install --write-paths "apps/web/src/**"
 npx ui-design-harness install --check
 ```
 
@@ -51,8 +56,21 @@ npx ui-design-harness install --check
 
 ```bash
 git clone https://github.com/luismasuarez/design-harness
-node design-harness/install.mjs install --install-skills
+node design-harness/install.mjs install --stack mobile   # app móvil (RN/Expo)
+node design-harness/install.mjs install                 # web por defecto
+node design-harness/install.mjs install --stack both    # web + móvil
 ```
+
+**Shortcut local (`dh`)**: para probar localmente sin escribir el path del
+instalador, enlaza el binario a `~/.local/bin`:
+
+```bash
+ln -sf <ruta-a-design-harness>/install.mjs ~/.local/bin/dh
+```
+
+Luego, desde **cualquier subdirectorio** del proyecto (detecta la raíz solo):
+`dh install`, `dh install --check`, `dh install --uninstall`. Con `--project <dir>`
+apuntas a otro proyecto. El bin se llama `dh` (y `design-harness` si usas `npm link`).
 
 **Vía C — skill del ecosistema**: solo la skill del orquestador (para usar con
 `harness-factory` o como referencia):
@@ -63,11 +81,12 @@ npx skills add luismasuarez/design-harness -g -s design-orchestrator
 
 El instalador: agrega los 6 agents (orquestador primary + 4 expertos + executor,
 todos subagentes invisibles) y el comando `/design` a tu `opencode.json`, copia la
-skill con sus scripts a `.opencode/skills/design-orchestrator/`, appendea la
-golden rule en `AGENTS.md` y crea `docs/design/`. Con `--install-skills` además
-clona e instala las 3 skills de expertos (`ui-ux-pro-max`, `impeccable`,
-`vercel-react-best-practices`) en `~/.config/opencode/skills/`. Idempotente y
-reversible (`--uninstall` respeta tus artefactos).
+skill con sus scripts a `.opencode/skills/design-orchestrator/`, **copia las 4
+skills de expertos embebidas** (`ui-ux-pro-max`, `impeccable`,
+`vercel-react-best-practices`, `vercel-react-native-skills`) a `.opencode/skills/`,
+appendea la golden rule en `AGENTS.md` y crea `docs/design/`. Idempotente y
+reversible (`--uninstall` respeta tus artefactos y remueve también las skills
+embebidas que haya instalado el instalador).
 
 **Después**: reinicia opencode → selecciona el modo `design-orchestrator` →
 `/design <scope>` con tu brief.

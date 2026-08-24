@@ -16,41 +16,70 @@
  *   --write-paths <p>      Glob de escritura del executor (default: src/**)
  *   --gates "a;b"          Gates del proyecto, separadas por ; (default: pnpm typecheck;pnpm lint)
  *   --package-filter <f>   Prefijo de paquete (ej: @org/console) — opcional
+ *   --stack <s>            Stack del proyecto: web|mobile|both (default: web).
+ *                          Controla qué skills de Vercel se instalan y qué
+ *                          carga el wireframe (web → react-best-practices,
+ *                          mobile → react-native-skills, both → ambas).
  *   --check                Diagnóstico sin modificar (exit 0 = instalado, 1 = incompleto)
  *   --uninstall            Revierte la instalación (respeta docs/design/ existente)
  *   --dry-run              Muestra las acciones sin escribirlas
  *   --force                Reemplaza artefactos existentes (skill dir, bloque golden rule)
- *   --skip-skills-check    Omite la verificación de skills de expertos
- *   --install-skills       Instala las skills de expertos faltantes automáticamente
- *   --skills-dir <dir>     Directorio destino de las skills instaladas (default: ~/.config/opencode/skills)
- *   --skills-src-dir <dir> Checkout local del repo fuente (omite el git clone; offline/tests)
- *   --skills-check-dirs <a;b>  Restringe la búsqueda de skills a estos dirs (tests/aislamiento)
+ *
+ * Skills de expertos: se EMBEBEN en el paquete (skills/vendor/) y se copian
+ * automáticamente a <proyecto>/.opencode/skills/<skill>/. Los flags legacy
+ * --install-skills, --skip-skills-check, --skills-dir, --skills-src-dir y
+ * --skills-check-dirs se aceptan por compatibilidad pero ya no tienen efecto.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, readdirSync, statSync, mkdtempSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, statSync, readdirSync } from "node:fs"
 import { join, dirname, resolve } from "node:path"
-import { homedir, tmpdir } from "node:os"
+import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
-import { spawnSync } from "node:child_process"
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url))
 const HARNESS_NAME = "design-harness"
 const ORCHESTRATOR = "design-orchestrator"
 const SKILL_SRC = join(HARNESS_DIR, "skills", ORCHESTRATOR)
+const VENDOR_DIR = join(HARNESS_DIR, "skills", "vendor")
 const MARKER = ".design-harness-installed.json"
+const VALID_STACKS = ["web", "mobile", "both"]
 
+/**
+ * Skills de expertos vendoriizadas en skills/vendor/ (embebidas en el paquete).
+ * Se copian automáticamente a <proyecto>/.opencode/skills/<skill>/ en cada instalación.
+ * `platform`: "any" (siempre), "web" o "mobile" (solo según --stack).
+ */
 const EXPERT_SKILLS = [
-  { skill: "ui-ux-pro-max", source: "nextlevelbuilder/ui-ux-pro-max-skill", skillPath: ".claude/skills/ui-ux-pro-max/SKILL.md", install: "npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g" },
-  { skill: "impeccable", source: "pbakaus/impeccable", skillPath: ".agents/skills/impeccable/SKILL.md", install: "npx skills add pbakaus/impeccable -g" },
-  { skill: "vercel-react-best-practices", source: "vercel-labs/agent-skills", skillPath: "skills/react-best-practices/SKILL.md", install: "npx skills add vercel-labs/agent-skills -g" },
+  { skill: "ui-ux-pro-max", vendorDir: join(VENDOR_DIR, "ui-ux-pro-max"), platform: "any" },
+  { skill: "impeccable", vendorDir: join(VENDOR_DIR, "impeccable"), platform: "any" },
+  { skill: "vercel-react-best-practices", vendorDir: join(VENDOR_DIR, "vercel-react-best-practices"), platform: "web" },
+  { skill: "vercel-react-native-skills", vendorDir: join(VENDOR_DIR, "vercel-react-native-skills"), platform: "mobile" },
 ]
 
-/** Enriquece EXPERT_SKILLS con el skillPath del manifest (fuente de verdad) si está declarado. */
-function expertSkillsFromManifest(m) {
-  return EXPERT_SKILLS.map((entry) => {
-    const expert = (m.roster?.experts ?? []).find((e) => e.skills?.includes(entry.skill))
-    const skillPath = expert?.skillSource?.skillPath ?? entry.skillPath
-    return { ...entry, skillPath }
-  })
+/** True si una skill aplica para el stack elegido. */
+function skillApplies(entry, stack) {
+  return entry.platform === "any" || entry.platform === stack || stack === "both"
+}
+
+/** Valida el flag --stack (default web). */
+function resolveStack(raw) {
+  if (raw === null || raw === undefined) return "web"
+  const s = String(raw).toLowerCase()
+  if (!VALID_STACKS.includes(s)) throw new Error(`--stack inválido: ${raw} (usa web|mobile|both)`)
+  return s
+}
+
+/**
+ * Infiere el stack de las skills ya instaladas (para --check sin --stack):
+ * mira qué skills de Vercel están presentes con marker. Si no hay ninguna,
+ * devuelve null (→ el llamador usa el default web).
+ */
+function inferInstalledStack(project) {
+  const hasWeb = existsSync(join(project, ".opencode", "skills", "vercel-react-best-practices", MARKER))
+  const hasMobile = existsSync(join(project, ".opencode", "skills", "vercel-react-native-skills", MARKER))
+  if (hasWeb && hasMobile) return "both"
+  if (hasMobile) return "mobile"
+  if (hasWeb) return "web"
+  return null
 }
 
 /* ---------- utilidades ---------- */
@@ -58,7 +87,7 @@ function expertSkillsFromManifest(m) {
 function parseArgs(argv) {
   // Subcomando opcional: `design-harness install --flag` == `design-harness --flag`
   if (argv[0] === "install") argv = argv.slice(1)
-  const args = { project: process.cwd(), writePaths: "src/**", gates: ["pnpm typecheck", "pnpm lint"], check: false, uninstall: false, dryRun: false, force: false, skipSkills: false, packageFilter: null, installSkills: false, skillsDir: join(homedir(), ".config", "opencode", "skills"), skillsSrcDir: null, skillsCheckDirs: null }
+  const args = { project: null, writePaths: "src/**", gates: null, stack: null, check: false, uninstall: false, dryRun: false, force: false, skipSkills: false, packageFilter: null, installSkills: false, skillsDir: join(homedir(), ".config", "opencode", "skills"), skillsSrcDir: null, skillsCheckDirs: null }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
     const next = () => argv[++i]
@@ -67,15 +96,19 @@ function parseArgs(argv) {
       case "--write-paths": args.writePaths = next(); break
       case "--gates": args.gates = next().split(";").map((g) => g.trim()).filter(Boolean); break
       case "--package-filter": args.packageFilter = next(); break
+      case "--stack": args.stack = next(); break
       case "--check": args.check = true; break
       case "--uninstall": args.uninstall = true; break
       case "--dry-run": args.dryRun = true; break
       case "--force": args.force = true; break
-      case "--skip-skills-check": args.skipSkills = true; break
-      case "--install-skills": args.installSkills = true; break
-      case "--skills-dir": args.skillsDir = resolve(next()); break
-      case "--skills-src-dir": args.skillsSrcDir = resolve(next()); break
-      case "--skills-check-dirs": args.skillsCheckDirs = next().split(";").map((d) => resolve(d.trim())).filter(Boolean); break
+      // Flags legacy: las skills van embebidas en el paquete; ya no aplican.
+      case "--skip-skills-check":
+      case "--install-skills":
+      case "--skills-dir":
+      case "--skills-src-dir":
+      case "--skills-check-dirs":
+        if (flag !== "--skip-skills-check" && flag !== "--install-skills") next()
+        break
     }
   }
   return args
@@ -84,6 +117,105 @@ function parseArgs(argv) {
 function readJson(path) {
   if (!existsSync(path)) return null
   try { return JSON.parse(readFileSync(path, "utf8")) } catch { return null }
+}
+
+/* ---------- auto-detección de gates ---------- */
+
+/**
+ * Detecta la raíz del proyecto desde un directorio arbitrario: sube hasta
+ * encontrar el primer directorio con .git (raíz del repo) o con package.json
+ * + pnpm-workspace.yaml (raíz de un monorepo sin .git). Si no hay ningún
+ * marcador, usa el cwd. Permite correr `dh install` desde cualquier
+ * subdirectorio del proyecto.
+ */
+function detectProjectRoot(start) {
+  let dir = resolve(start)
+  while (true) {
+    if (existsSync(join(dir, ".git"))) return dir
+    if (existsSync(join(dir, "package.json")) && existsSync(join(dir, "pnpm-workspace.yaml"))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return resolve(start) // llegamos a la raíz del filesystem
+    dir = parent
+  }
+}
+
+/** Detecta el gestor de paquetes desde el lockfile del proyecto. */
+function detectPackageManager(project) {
+  if (existsSync(join(project, "pnpm-lock.yaml"))) return "pnpm"
+  if (existsSync(join(project, "yarn.lock"))) return "yarn"
+  if (existsSync(join(project, "package-lock.json"))) return "npm"
+  return "pnpm"
+}
+
+/**
+ * Expande un patrón de workspace simple ("packages/*", "cli", ".") a
+ * directorios existentes. Solo soporta el caso común (sin globs anidados).
+ */
+function expandWorkspaceGlobs(project, patterns) {
+  const out = new Set()
+  for (const p of patterns) {
+    const clean = p.replace(/^\.\//, "")
+    if (clean === ".") { out.add(project); continue }
+    if (clean.includes("*")) {
+      const [head, tail] = clean.split("*/")
+      const dir = join(project, head || ".")
+      if (existsSync(dir)) {
+        for (const child of readdirSync(dir, { withFileTypes: true })) {
+          if (child.isDirectory() && (!tail || existsSync(join(dir, child.name, tail)))) {
+            out.add(join(dir, child.name, tail || ""))
+          }
+        }
+      }
+    } else if (existsSync(join(project, clean))) {
+      out.add(join(project, clean))
+    }
+  }
+  return [...out]
+}
+
+/** Workspaces del monorepo (pnpm-workspace.yaml o "workspaces" en package.json). */
+function detectWorkspaces(project) {
+  const pnpmWs = join(project, "pnpm-workspace.yaml")
+  if (existsSync(pnpmWs)) {
+    const yaml = readFileSync(pnpmWs, "utf8")
+    const patterns = [...yaml.matchAll(/^\s*-\s+['"]?([^'"\n]+)['"]?\s*$/gm)].map((m) => m[1].trim())
+    return expandWorkspaceGlobs(project, patterns.filter(Boolean))
+  }
+  const pkg = readJson(join(project, "package.json"))
+  const ws = pkg?.workspaces
+  if (Array.isArray(ws)) return expandWorkspaceGlobs(project, ws)
+  if (ws?.packages) return expandWorkspaceGlobs(project, ws.packages)
+  return []
+}
+
+/**
+ * Infiere las gates del proyecto cuando el usuario no pasa --gates:
+ * - typecheck: script "typecheck", o `tsc --noEmit` si hay tsconfig.
+ * - workspaces con script typecheck propio (el typecheck raíz no los cubre).
+ * - lint: script "lint:ci" (no modifica) o "lint".
+ * Fallback conservador: pnpm typecheck;pnpm lint.
+ */
+function detectGates(project) {
+  const pm = detectPackageManager(project)
+  const pkg = readJson(join(project, "package.json"))
+  const scripts = pkg?.scripts ?? {}
+  const gates = []
+
+  if (scripts.typecheck) gates.push(`${pm} typecheck`)
+  else if (existsSync(join(project, "tsconfig.json"))) gates.push("npx tsc --noEmit")
+
+  for (const ws of detectWorkspaces(project)) {
+    if (ws === project) continue
+    const pkg = readJson(join(ws, "package.json"))
+    if (pkg?.name && pkg.scripts?.typecheck) {
+      gates.push(`${pm} --filter ${pkg.name} typecheck`)
+    }
+  }
+
+  if (scripts["lint:ci"]) gates.push(`${pm} lint:ci`)
+  else if (scripts.lint) gates.push(`${pm} lint`)
+
+  return gates.length ? gates : ["pnpm typecheck", "pnpm lint"]
 }
 
 function manifest() {
@@ -98,8 +230,14 @@ function log(action, msg) {
 
 /* ---------- render de prompts (desde el manifest) ---------- */
 
-function renderExpertPrompt(expert, scopeDir) {
-  const skills = expert.skills.map((s) => `skill({ name: "${s}" })`).join(" and ")
+function renderExpertPrompt(expert, scopeDir, stack = "web") {
+  // Filtra las skills del experto por el stack del proyecto (las de plataforma
+  // no aplicable no se cargan ni se referencian).
+  const applicable = expert.skills.filter((s) => {
+    const entry = EXPERT_SKILLS.find((e) => e.skill === s)
+    return !entry || skillApplies(entry, stack)
+  })
+  const skills = applicable.map((s) => `skill({ name: "${s}" })`).join(" and ")
   const inputs = (expert.input ?? [])
     .map((i) => (typeof i === "string" ? i : i.ref))
     .join(", ")
@@ -109,9 +247,15 @@ function renderExpertPrompt(expert, scopeDir) {
     : ""
   const writing = `\n- ESCRITURA ROBUSTA: si el deliverable supera ~15 KB (la tool Write trunca payloads grandes), escríbelo POR SECCIONES en docs/design/<scope>/.tmp/<artifact>.<n>.md (una Write pequeña por sección) y ensámblalo con: node .opencode/skills/design-orchestrator/scripts/write-md.mjs --file <destino> --sources <secciones ordenadas> --budget <budget-del-artefacto> --cleanup docs/design/<scope>/.tmp. Valida al final con --check. NUNCA partas el archivo a mano con marcas de continuación ([CONTINUAR], <!-- more -->) — invalidan el artefacto.`
   const wireframeRules = expert.id === "expert-wireframe"
-    ? `\n- WIREFRAME CANÓNICO: UNA variante por pantalla/estado/flujo. Sin subvariantes (WF-5c/5d, v2a/v2b, "opción A/B"). Las alternativas exploradas van a research.md (sección "Exploración / alternativas descartadas" con justificación), NUNCA al wireframe.
+    ? (() => {
+        const stackSkills = applicable.filter((s) => ["vercel-react-best-practices", "vercel-react-native-skills"].includes(s))
+        const stackNote = stackSkills.length
+          ? `\n- SKILL DE STACK DISPONIBLE: este proyecto tiene instalada(s) ${stackSkills.map((s) => `\`${s}\``).join(", ")}. Usa la que aplique al target del scope; si el target no coincide con la instalada, explica la limitación en el wireframe.`
+          : ""
+        return `\n- WIREFRAME CANÓNICO: UNA variante por pantalla/estado/flujo. Sin subvariantes (WF-5c/5d, v2a/v2b, "opción A/B"). Las alternativas exploradas van a research.md (sección "Exploración / alternativas descartadas" con justificación), NUNCA al wireframe.
 - TOKENS DEL PROYECTO: el wireframe.html usa los CSS custom props/tokens reales de DESIGN.md y del design system del proyecto; solo los tokens inexistentes se proponen, marcados como "propuesta de token" (el critique los valida).
-- COBERTURA DE ESTADOS: cubre SIEMPRE loading, empty, error y los estados interactivos de cada pantalla (lectura/edición/guardando), con presupuestos de interacción (clics máx. por acción).`
+- COBERTURA DE ESTADOS: cubre SIEMPRE loading, empty, error y los estados interactivos de cada pantalla (lectura/edición/guardando), con presupuestos de interacción (clics máx. por acción).${stackNote}`
+      })()
     : ""
   return [
     `You are the ${expert.roleLabel} expert in the ${HARNESS_NAME} harness.`,
@@ -137,7 +281,7 @@ function renderExpertPrompt(expert, scopeDir) {
 
 function renderExecutorPrompt(executor, gates, writePaths, hasImpeccable) {
   const extraGates = hasImpeccable
-    ? [`, node .opencode/skills/impeccable/scripts/detect.mjs --json --no-advisory <files-del-slice>`]
+    ? [`node .opencode/skills/impeccable/scripts/detect.mjs --json --no-advisory <files-del-slice>`]
     : []
   const gateBlock = [...gates, ...extraGates]
     .map((g, i) => `${i + 1}. \`${g}\``)
@@ -192,7 +336,7 @@ function renderOrchestratorPrompt(gates, packageFilter, hasImpeccable) {
     `0.6. CHECKPOINT: after EVERY completed phase, write/update docs/design/<scope>/RUN-STATE.json with: current phase, baseline SHA, artifacts written (path + size), subagents completed, critique threshold. This allows resuming after network/provider cuts without auditing the tree by hand.`,
     `1. Delegate to expert-research: (brief, audiencia, contexto visual del proyecto, mapa de pantallas). Handoff: pasa el scope y la ruta docs/design/<scope>/research.md. El research DEBE verificar empíricamente todo supuesto y "no-gap" (citar archivo:línea o comando real); lo que no se verifica se marca abierto. Si existe una fuente funcional (otro proyecto, CLI propio), se verifica contra ella. Las alternativas de diseño exploradas se documentan en research.md bajo "Exploración / alternativas descartadas" (con justificación) — NUNCA en el wireframe.`,
     `2. Delegate to expert-design-system: (estilo, paleta, tipografía, tokens, anti-patrones — input: research). Handoff: pasa research.md como input, ruta de salida docs/design/<scope>/design-system.md.`,
-    `3. Delegate to expert-wireframe: (wireframes por pantalla, layouts.md, wireframe.html lo-fi — inputs: research + design-system). Handoff: pasa ambos artifacts como inputs, rutas de salida bajo docs/design/<scope>/. El wireframe es CANÓNICO: una variante por pantalla/estado/flujo, usando los tokens reales del proyecto; sin subvariantes acumuladas.`,
+    `3. Delegate to expert-wireframe: (wireframes por pantalla, layouts.md, wireframe.html lo-fi — inputs: research + design-system). Handoff: pasa ambos artifacts como inputs, rutas de salida bajo docs/design/<scope>/. Indica el TARGET del scope (móvil React Native/Expo vs web) según el research/brief para que el wireframe aplique la skill de stack correcta. El wireframe es CANÓNICO: una variante por pantalla/estado/flujo, usando los tokens reales del proyecto; sin subvariantes acumuladas.`,
     `4. Delegate to expert-critique: (ronda 1 — score por heurísticas sobre wireframes + layouts. ANTES de delegar, el orquestador renderiza wireframe.html en chrome-devtools y prepara SIEMPRE evidencia ligera: screenshots en JPEG <= 250KB + snapshot de accesibilidad (a11y) + JSON de render-audit.js; guarda todo en docs/design/<scope>/screenshots/. Prohíbe al critique leer PNG/archivos > 500KB (bloquea subagentes sin visión). Handoff: pasa wireframes + layouts + screenshots como inputs, ruta de salida docs/design/<scope>/critique.md.`,
     `5. Delegate to expert-wireframe: (ronda 2 — SOLO si el score de critique < umbral: refina wireframes con critique.md como input; si el score es aceptable, se omite). Handoff: pasa critique.md como input. Los refinamientos se aplican IN PLACE (reemplazan el wireframe), nunca acumulando subvariantes.`,
     `6. Delegate to expert-critique: (ronda 2 — re-evaluación final si hubo ronda 2; se omite si no hubo). Handoff: re-audita los wireframes refinados.`,
@@ -217,7 +361,7 @@ function renderOrchestratorPrompt(gates, packageFilter, hasImpeccable) {
 
 /* ---------- permisos ---------- */
 
-function expertPermissions(expert) {
+function expertPermissions(expert, stack = "web") {
   // Deny por defecto bloqueó decenas de comandos de inspección (wc, grep, sed,
   // node -e, pipes...) en las corridas reales. Ampliamos el allow con las
   // herramientas estándar de lectura/verificación y pasamos el resto a "ask"
@@ -245,7 +389,11 @@ function expertPermissions(expert) {
   if (expert.skills.includes("impeccable")) {
     bashAllow.push("npx impeccable *", "node .opencode/skills/impeccable/scripts/*")
   }
-  const skillAllow = Object.fromEntries(expert.skills.map((s) => [s, "allow"]))
+  const applicable = expert.skills.filter((s) => {
+    const entry = EXPERT_SKILLS.find((e) => e.skill === s)
+    return !entry || skillApplies(entry, stack)
+  })
+  const skillAllow = Object.fromEntries(applicable.map((s) => [s, "allow"]))
   return {
     edit: { "*": "deny", "docs/design/**": "allow" },
     bash: { "*": "ask", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
@@ -293,13 +441,11 @@ function executorPermissions(writePaths) {
 function buildConfig(manifestData, args) {
   const m = manifestData
   const writePaths = args.writePaths
+  const stack = resolveStack(args.stack)
   const agents = {}
-  const hasImpeccable = [
-    join(args.project, ".opencode", "skills", "impeccable"),
-    join(args.project, ".agents", "skills", "impeccable"),
-    join(homedir(), ".config", "opencode", "skills", "impeccable"),
-    join(homedir(), ".agents", "skills", "impeccable"),
-  ].some((dir) => existsSync(join(dir, "SKILL.md")))
+  // Las skills de expertos van vendoriizadas en el paquete y se copian al
+  // proyecto según el stack: el gate detect de impeccable queda activo siempre.
+  const hasImpeccable = true
 
   agents[ORCHESTRATOR] = {
     description: m.orchestrator.agent.description,
@@ -317,8 +463,8 @@ function buildConfig(manifestData, args) {
     agents[expert.id] = {
       description: expert.description,
       mode: "subagent",
-      prompt: renderExpertPrompt(expert),
-      permission: expertPermissions(expert),
+      prompt: renderExpertPrompt(expert, null, stack),
+      permission: expertPermissions(expert, stack),
     }
   }
 
@@ -373,64 +519,85 @@ Cualquier tarea que involucre **generar propuestas de diseño UI/UX iterativas: 
 ${GOLDEN_END}`
 }
 
-/* ---------- skills check ---------- */
+/* ---------- skills de expertos (vendoriizadas) ---------- */
 
-function skillDirs(project, extraDir, onlyDirs) {
-  if (onlyDirs?.length) return onlyDirs
-  const dirs = [
-    join(project, ".opencode", "skills"),
-    join(project, ".agents", "skills"),
-    join(homedir(), ".config", "opencode", "skills"),
-    join(homedir(), ".agents", "skills"),
-  ]
-  if (extraDir && !dirs.includes(extraDir)) dirs.push(extraDir)
-  return dirs
+/**
+ * Las 4 skills de expertos viajan EMBEBIDAS en el paquete bajo skills/vendor/.
+ * `install` las copia a <proyecto>/.opencode/skills/<skill>/ según el --stack
+ * elegido, sin clonar repos ni depender de la instalación global de opencode.
+ */
+
+/** True si la skill `<skill>` está instalada en el proyecto destino. */
+function skillInstalled(project, skill) {
+  return existsSync(join(project, ".opencode", "skills", skill, "SKILL.md"))
 }
 
-function checkExpertSkills(project, extraDir, skillList = EXPERT_SKILLS, onlyDirs = null) {
-  const dirs = skillDirs(project, extraDir, onlyDirs)
-  const missing = []
-  for (const entry of skillList) {
-    const found = dirs.some((dir) => existsSync(join(dir, entry.skill)))
-    if (!found) missing.push(entry)
-  }
-  return missing
+/** Skills que aplican al stack dado. */
+function applicableSkills(skillList, stack) {
+  return skillList.filter((entry) => skillApplies(entry, stack))
+}
+
+function checkExpertSkills(project, _extraDir, skillList = EXPERT_SKILLS, stack = "web") {
+  return applicableSkills(skillList, stack).filter((entry) => !skillInstalled(project, entry.skill))
 }
 
 /**
- * Instala una skill de experto de forma determinista (doc oficial de opencode):
- * clona el repo fuente y copia la carpeta de la skill (dirname del skillPath)
- * al directorio de discovery destino. Sin dependencias del CLI skills.
+ * Copia una skill vendoriizada al proyecto destino. Reescribe las rutas del
+ * SKILL.md de ui-ux-pro-max (skills/ui-ux-pro-max/scripts → .opencode/skills/...).
  */
-function installExpertSkill(entry, args) {
-  const skillFolder = dirname(entry.skillPath)
-  const dest = join(args.skillsDir, entry.skill)
-  if (existsSync(dest)) return { ok: true, skipped: true }
-
-  let repoDir
-  let tmp = null
-  if (args.skillsSrcDir) {
-    repoDir = args.skillsSrcDir
-  } else {
-    tmp = mkdtempSync(join(tmpdir(), "dh-skills-"))
-    const repoUrl = `https://github.com/${entry.source}.git`
-    const r = spawnSync("git", ["clone", "--depth", "1", repoUrl, join(tmp, "repo")], { encoding: "utf8" })
-    if (r.status !== 0) {
-      rmSync(tmp, { recursive: true, force: true })
-      return { ok: false, error: `git clone ${repoUrl} falló: ${(r.stderr || r.stdout || "").trim().slice(0, 300)}` }
-    }
-    repoDir = join(tmp, "repo")
+function copyVendoredSkill(entry, project) {
+  const dest = join(project, ".opencode", "skills", entry.skill)
+  if (!existsSync(join(entry.vendorDir, "SKILL.md"))) {
+    return { ok: false, error: `skill vendoriizada ${entry.skill} sin SKILL.md en ${entry.vendorDir}` }
   }
-
-  const src = join(repoDir, skillFolder)
-  if (!existsSync(join(src, "SKILL.md"))) {
-    if (tmp) rmSync(tmp, { recursive: true, force: true })
-    return { ok: false, error: `skillPath ${entry.skillPath} no encontrado en ${repoDir}` }
+  rmSync(dest, { recursive: true, force: true })
+  mkdirSync(join(project, ".opencode", "skills"), { recursive: true })
+  cpSync(entry.vendorDir, dest, { recursive: true })
+  writeFileSync(join(dest, MARKER), JSON.stringify({ harness: HARNESS_NAME, skill: entry.skill, installedAt: new Date().toISOString() }, null, 2) + "\n")
+  if (entry.skill === "ui-ux-pro-max") {
+    const skillMd = join(dest, "SKILL.md")
+    const content = readFileSync(skillMd, "utf8")
+    const next = content.replace(/skills\/ui-ux-pro-max\/scripts\//g, ".opencode/skills/ui-ux-pro-max/scripts/")
+    if (next !== content) writeFileSync(skillMd, next)
   }
-  mkdirSync(dirname(dest), { recursive: true })
-  cpSync(src, dest, { recursive: true })
-  if (tmp) rmSync(tmp, { recursive: true, force: true })
   return { ok: true, dest }
+}
+
+/**
+ * Instala (o repara) las skills vendoriizadas aplicables al stack. Remueve las
+ * skills instaladas por el instalador que ya no apliquen al stack (p. ej.
+ * re-instalar `both` → `web` deja el proyecto consistente).
+ */
+function copyVendoredSkills(project, stack = "web") {
+  const results = []
+  const kept = []
+  for (const entry of applicableSkills(EXPERT_SKILLS, stack)) {
+    const res = copyVendoredSkill(entry, project)
+    kept.push(entry.skill)
+    results.push({ ...entry, ...res })
+  }
+  for (const entry of EXPERT_SKILLS) {
+    if (kept.includes(entry.skill)) continue
+    const dest = join(project, ".opencode", "skills", entry.skill)
+    if (existsSync(join(dest, MARKER))) {
+      rmSync(dest, { recursive: true, force: true })
+      results.push({ ...entry, ok: true, removed: true })
+    }
+  }
+  return results
+}
+
+/** Remueve las skills embebidas por el instalador (marcadas con el marker). */
+function removeVendoredSkills(project) {
+  const removed = []
+  for (const entry of EXPERT_SKILLS) {
+    const dest = join(project, ".opencode", "skills", entry.skill)
+    if (existsSync(join(dest, MARKER))) {
+      rmSync(dest, { recursive: true, force: true })
+      removed.push(entry.skill)
+    }
+  }
+  return removed
 }
 
 /* ---------- acciones ---------- */
@@ -490,13 +657,17 @@ function stripGoldenRule(project) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2))
-  const project = resolve(args.project)
+  const project = args.project ? resolve(args.project) : detectProjectRoot(process.cwd())
   if (!existsSync(project) || !statSync(project).isDirectory()) {
     throw new Error(`Proyecto destino no encontrado: ${project}`)
   }
 
   const m = manifest()
-  const SKILLS = expertSkillsFromManifest(m)
+  const SKILLS = EXPERT_SKILLS
+  const stack = args.stack ? resolveStack(args.stack) : (args.check ? inferInstalledStack(project) ?? "web" : "web")
+  // Gates por defecto: auto-detectadas del proyecto (gestor, typecheck, lint,
+  // workspaces). El usuario puede sobreescribirlas con --gates.
+  if (!args.gates) args.gates = detectGates(project)
 
   if (args.check) {
     const { cfg } = readAgentsConfig(project)
@@ -505,17 +676,18 @@ function main() {
     const commandOk = !!cfg.command?.design
     const skillOk = existsSync(join(skillDir, "SKILL.md")) && existsSync(join(skillDir, "scripts", "render-audit.js"))
     const goldenOk = existsSync(join(project, "AGENTS.md")) && readFileSync(join(project, "AGENTS.md"), "utf8").includes(GOLDEN_START)
-    const missing = args.skipSkills ? [] : checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
+    const missing = checkExpertSkills(project, null, SKILLS, stack)
     const rows = [
       ["Agents (orchestrator + expertos + executor)", agentsOk ? "ok" : "falta"],
       ["Comando /design", commandOk ? "ok" : "falta"],
       ["Skill design-orchestrator + scripts", skillOk ? "ok" : "falta"],
       ["Golden rule en AGENTS.md", goldenOk ? "ok" : "falta"],
       ["docs/design/", existsSync(join(project, "docs", "design")) ? "ok" : "falta"],
-      ...missing.map((s) => [`Skill experto: ${s.skill}`, "falta — instala con: " + s.install]),
+      ["Stack", "ok (" + stack + ")"],
+      ...missing.map((s) => [`Skill experto: ${s.skill}`, "falta — reinstala el harness (va embebida)"]),
     ]
     console.log(`## Diagnóstico design-harness en ${project}\n`)
-    for (const [k, v] of rows) console.log(`- [${v === "ok" ? "x" : " "}] ${k}: ${v}`)
+    for (const [k, v] of rows) console.log(`- [${v.startsWith("ok") ? "x" : " "}] ${k}: ${v}`)
     const complete = agentsOk && commandOk && skillOk && goldenOk && missing.length === 0
     console.log(complete ? "\nInstalación completa." : "\nInstalación incompleta.")
     process.exit(complete ? 0 : 1)
@@ -527,8 +699,10 @@ function main() {
     const skillDir = join(project, ".opencode", "skills", ORCHESTRATOR)
     const marker = join(skillDir, MARKER)
     const golden = stripGoldenRule(project)
+    const vendored = EXPERT_SKILLS.map((e) => e.skill).filter((s) => existsSync(join(project, ".opencode", "skills", s, MARKER)))
     if (args.dryRun) {
       log("dry-run", `desinstalaría: ${cfgPath} (quitar agents+comando), ${golden.path} (${golden.action}), ${skillDir}${existsSync(marker) ? " (con marker → borrado)" : " (sin marker → se conserva)"}`)
+      for (const s of vendored) log("dry-run", `removería skill embebida ${s}`)
       return
     }
     writeFileSync(cfgPath, JSON.stringify(stripped, null, 2) + "\n")
@@ -555,6 +729,8 @@ function main() {
     } else if (existsSync(skillDir)) {
       log("warn", `${skillDir} — no tiene marker del instalador; se conserva (¿instalada manualmente?)`)
     }
+    const removed = removeVendoredSkills(project)
+    for (const s of removed) log("ok", `.opencode/skills/${s} — skill embebida removida`)
     log("ok", "design-harness desinstalado (docs/design/ se conserva)")
     return
   }
@@ -573,14 +749,18 @@ function main() {
   const skillExists = existsSync(skillDir)
   const golden = upsertGoldenRule(project, args.force)
   const docsDir = join(project, "docs", "design")
-  const missingSkills = args.skipSkills ? [] : checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
 
   if (args.dryRun) {
     log("dry-run", `escribiría ${cfgPath} (agents + comando /design, ${Object.keys(built.agent).length} agents)`)
     log("dry-run", `${skillExists && !args.force ? "skill existente → skip (usa --force para reemplazar)" : "copiaría skill a " + skillDir}`)
     log("dry-run", `${golden.path}: ${golden.action}`)
     log("dry-run", `crearía ${docsDir}`)
-    for (const s of missingSkills) log("dry-run", `instalaría skill ${s.skill} → ${args.skillsDir}/${s.skill}`)
+    for (const e of applicableSkills(EXPERT_SKILLS, stack)) log("dry-run", `copiaría skill embebida ${e.skill} → .opencode/skills/${e.skill} [${e.platform}]`)
+    for (const e of EXPERT_SKILLS) {
+      if (skillApplies(e, stack)) continue
+      const dest = join(project, ".opencode", "skills", e.skill)
+      if (existsSync(join(dest, MARKER))) log("dry-run", `removería skill embebida ${e.skill} (no aplica a --stack ${stack})`)
+    }
     return
   }
 
@@ -615,24 +795,18 @@ function main() {
   mkdirSync(docsDir, { recursive: true })
   log("ok", `${docsDir} — directorio de artefactos`)
 
-  if (missingSkills.length) {
-    if (args.installSkills) {
-      log("info", `instalando ${missingSkills.length} skill(s) de experto en ${args.skillsDir}...`)
-      for (const s of missingSkills) {
-        const res = installExpertSkill(s, args)
-        if (res.ok) log("ok", `${s.skill} instalada → ${res.skipped ? "ya existía" : res.dest}`)
-        else log("warn", `${s.skill} NO instalada: ${res.error}`)
-      }
-      const stillMissing = checkExpertSkills(project, args.skillsDir, SKILLS, args.skillsCheckDirs)
-      if (stillMissing.length) {
-        for (const s of stillMissing) log("warn", `skill aún faltante: ${s.skill} → instala manualmente: ${s.install}`)
-      } else {
-        log("ok", "todas las skills de expertos disponibles")
-      }
-    } else {
-      for (const s of missingSkills) log("warn", `skill de experto faltante: ${s.skill} → instala con: ${s.install} (o usa --install-skills)`)
-      log("warn", "Sin las skills de expertos, los subagentes degradarán (el orquestador inyecta la metodología).")
-    }
+  // Skills de expertos vendoriizadas → se copian las aplicables al --stack.
+  const skillResults = copyVendoredSkills(project, stack)
+  for (const res of skillResults) {
+    if (res.removed) log("ok", `.opencode/skills/${res.skill} — skill removida (no aplica a --stack ${stack})`)
+    else if (res.ok) log("ok", `.opencode/skills/${res.skill} — skill embebida copiada`)
+    else log("warn", `skill ${res.skill} NO copiada: ${res.error}`)
+  }
+  const stillMissing = checkExpertSkills(project, null, SKILLS, stack)
+  if (stillMissing.length) {
+    for (const s of stillMissing) log("warn", `skill aún faltante en el proyecto: ${s.skill} (revisa skills/vendor/${s.skill})`)
+  } else {
+    log("ok", "skills de expertos disponibles en el proyecto")
   }
 
   log("ok", "design-harness instalado. Reinicia opencode y selecciona el modo design-orchestrator.")

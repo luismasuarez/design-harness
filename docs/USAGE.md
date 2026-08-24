@@ -22,60 +22,65 @@ npx github:luismasuarez/design-harness install --write-paths "apps/web/src/**"
 
 Con el repo clonado: `node design-harness/install.mjs install <flags>` (equivalente).
 
+**Shortcut local** (`dh`): enlaza el instalador a tu PATH una sola vez y usa un
+comando corto desde cualquier subdirectorio:
+
+```bash
+ln -sf <ruta-a-design-harness>/install.mjs ~/.local/bin/dh
+cd mi-proyecto/src/screens
+dh install          # detecta la raíz del proyecto automáticamente
+dh install --check
+```
+
+`dh` sube hasta la raíz del repo (`.git` o `package.json` + `pnpm-workspace.yaml`)
+y opera ahí; con `--project <dir>` puedes apuntar a otro proyecto explícitamente.
+
+> En proyectos Expo/React Native con monorepo pnpm, el instalador detecta solo
+> las gates correctas: `npx tsc --noEmit` (o `pnpm typecheck` si existe),
+> `pnpm --filter <workspace> typecheck` y `pnpm lint:ci`. No hace falta pasar
+> `--gates` manualmente.
+
 ### Flags principales
 
 | Flag | Default | Qué configura |
 |---|---|---|
 | `--write-paths` | `src/**` | Dónde puede escribir el executor (el código que implementa) |
-| `--gates "a;b"` | `pnpm typecheck;pnpm lint` | Gates del baseline y de cada slice |
+| `--gates "a;b"` | auto-detectadas | Gates del baseline y de cada slice. Por defecto el instalador las infiere del proyecto: script `typecheck` (o `npx tsc --noEmit` si hay `tsconfig.json`), typecheck de workspaces que lo tengan propio, y `lint:ci` (o `lint`) |
 | `--package-filter` | — | Prefijo de paquete del monorepo (ej: `@org/console`) — añade automáticamente `pnpm --filter <pkg> exec tsc -b --force` al gate, cubriendo paquetes sin script `typecheck` (el typecheck raíz de turbo no los cubre) |
-| `--install-skills` | — | Instala automáticamente las skills de expertos faltantes (clona el repo fuente y copia la skill al dir global de opencode) |
-| `--skills-dir` | `~/.config/opencode/skills` | Directorio destino de las skills instaladas por `--install-skills` |
+| `--stack web\|mobile\|both` | `web` | Stack del proyecto. Controla qué skills de Vercel se instalan y qué carga el wireframe: `web` → `vercel-react-best-practices`, `mobile` → `vercel-react-native-skills`, `both` → ambas. Re-instalar con otro stack remueve las skills que ya no apliquen. `--check` infiere el stack de las skills instaladas si no pasas `--stack` |
 | `--check` | — | Diagnóstico de instalación (exit 0 = completa) |
 | `--uninstall` | — | Revierte la instalación (respeta `docs/design/` y tu config) |
 | `--dry-run` | — | Muestra qué haría sin escribir nada |
 | `--force` | — | Reemplaza skill/golden rule existentes |
 
-### Skills de expertos (automático o manual)
+> Flags legacy `--install-skills`, `--skip-skills-check`, `--skills-dir`,
+> `--skills-src-dir` y `--skills-check-dirs` se aceptan por compatibilidad pero
+> **ya no tienen efecto**: las skills de expertos van embebidas en el paquete.
 
-El harness usa 3 skills para sus expertos: `ui-ux-pro-max`, `impeccable` y
-`vercel-react-best-practices`. El instalador las verifica al instalar.
+### Skills de expertos (embebidas)
 
-**Automático (recomendado)** — durante la instalación:
+El harness usa 4 skills para sus expertos: `ui-ux-pro-max`, `impeccable`,
+`vercel-react-best-practices` y `vercel-react-native-skills`. **Viajan
+vendoriizadas dentro del paquete** (`skills/vendor/`) y el instalador las copia
+automáticamente a `<proyecto>/.opencode/skills/<skill>/` en cada instalación. No
+necesitas clonar repos, instalar nada en global ni correr flags extra — un solo
+`install` lo deja todo listo y autocontenido en el proyecto.
 
-```bash
-npx ui-design-harness install --install-skills
-```
+El experto wireframe es **stack-aware según `--stack`**: en `web` carga y aplica
+`vercel-react-best-practices` (waterfalls, bundle, fetching); en `mobile` carga
+`vercel-react-native-skills` (listas virtualizadas, safe areas, navegación
+nativa, expo-image, Pressable); en `both` ambas. Así una propuesta cubre tanto
+UI web como móvil sin instalar skills que el proyecto no necesita.
 
-Clona cada repo fuente (`git clone --depth 1`) y copia la skill a
-`~/.config/opencode/skills/` (dir de discovery global de opencode). Es
-determinista: usa el `skillPath` exacto declarado en el manifest. Si alguna
-falla (sin red, path inexistente), reporta el warning y te da la alternativa
-manual — nunca aborta la instalación del harness.
+Al copiar `ui-ux-pro-max`, el instalador reescribe las rutas de su `SKILL.md`
+(`skills/ui-ux-pro-max/scripts/…` → `.opencode/skills/ui-ux-pro-max/scripts/…`)
+para que sus scripts Python funcionen desde su ubicación real.
 
-**Manual** — las 3 vías equivalentes:
+`--uninstall` remueve también las skills embebidas (solo las marcadas por el
+instalador; una skill que tengas instalada a mano se conserva).
 
-```bash
-npx skills add nextlevelbuilder/ui-ux-pro-max-skill -g
-npx skills add pbakaus/impeccable -g
-npx skills add vercel-labs/agent-skills -g
-```
-
-```bash
-git clone --depth 1 https://github.com/pbakaus/impeccable /tmp/impeccable
-cp -r /tmp/impeccable/.agents/skills/impeccable ~/.config/opencode/skills/
-```
-
-> Nota: `ui-ux-pro-max-skill` y `agent-skills` contienen varias skills — si el
-> CLI `npx skills` te pide seleccionar, elige la exacta (`ui-ux-pro-max` /
-> `vercel-react-best-practices`). Con `--install-skills` no hay selección: copia
-> solo la skill declarada en el manifest.
-
-Después de cualquier vía: `npx ui-design-harness install --check` y reinicia
-opencode (el discovery de skills corre al arrancar).
-
-Sin las skills el harness degrada (el orquestador inyecta la metodología), pero
-instálalas para calidad completa.
+Después de instalar: `npx ui-design-harness install --check` y reinicia opencode
+(el discovery de skills corre al arrancar).
 
 ## 3. Primer diseño
 

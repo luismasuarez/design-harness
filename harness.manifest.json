@@ -59,7 +59,7 @@
         "role": "analysis-expert",
         "roleLabel": "Wireframes & Layout",
         "description": "Produce wireframes por pantalla, layout spec y un wireframe.html lo-fi renderizable",
-        "skills": ["ui-ux-pro-max", "vercel-react-best-practices"],
+        "skills": ["ui-ux-pro-max", "vercel-react-best-practices", "vercel-react-native-skills"],
         "skillSource": {
           "source": "vercel-labs/agent-skills",
           "sourceType": "github",
@@ -70,9 +70,9 @@
           { "ref": "expert-research.deliverable" },
           { "ref": "expert-design-system.deliverable" }
         ],
-        "task": "produce los wireframes de cada pantalla del scope (estructura, jerarquía, grid, breakpoints responsive), el layout spec en layouts.md (spacing, alineación, ritmo) y un wireframe.html estático lo-fi que renderice todas las pantallas para captura visual",
+        "task": "produce los wireframes de cada pantalla del scope (estructura, jerarquía, grid, breakpoints responsive), el layout spec en layouts.md (spacing, alineación, ritmo) y un wireframe.html estático lo-fi que renderice todas las pantallas para captura visual. STACK-AWARE: decide el target del scope a partir del brief y del research (móvil React Native/Expo si el proyecto o el scope es móvil; web en otro caso) y aplica la skill de stack que tengas cargada para el target correcto (patrones móviles: listas virtualizadas, safe areas, navegación nativa, expo-image, Pressable; patrones web: waterfalls, bundle, fetching). Los patrones de componentes del wireframe deben reflejar el target real, aunque el wireframe.html siga siendo HTML lo-fi para captura en navegador.",
         "overrides": {
-          "prompt": "Escribe tres artefactos bajo docs/design/<scope>/: wireframes.md, layouts.md y wireframe.html. El wireframe.html debe ser autocontenido (una sola página, CSS inline o Tailwind CDN, sin dependencias ni builds) y abrible en un navegador sin servidor."
+          "prompt": "Escribe tres artefactos bajo docs/design/<scope>/: wireframes.md, layouts.md y wireframe.html. El wireframe.html debe ser autocontenido (una sola página, CSS inline o Tailwind CDN, sin dependencias ni builds) y abrible en un navegador sin servidor. Si el target es móvil (React Native/Expo), usa las guías de tu skill de stack móvil para los patrones de componentes del wireframe."
         },
         "summary": "pantallas cubiertas, decisiones de layout y los artifact paths escritos",
         "trigger": ["wireframe", "layout", "estructura", "mockup", "pantalla"]
