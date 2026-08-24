@@ -152,6 +152,12 @@
             "command": "pnpm lint",
             "expect": "no-new-errors",
             "notes": ">= baseline count; auto-fixes solo revierten archivos ajenos"
+          },
+          {
+            "name": "detect",
+            "command": "node .opencode/skills/impeccable/scripts/detect.mjs --json --no-advisory",
+            "expect": "no-new-warnings",
+            "notes": "detector de anti-patrones de UI de impeccable (lint de UX) sobre los archivos NEW/MOD del slice; baseline 0 warnings (los advisory no cuentan). Si hay warnings nuevos, reportar como deuda documentada sin commitear."
           }
         ]
       },
@@ -169,6 +175,15 @@
     "agent": {
       "name": "design-orchestrator",
       "description": "Orquesta el harness de diseño UI/UX (modo primary de opencode): investigación, sistema de diseño, wireframes, crítica iterativa y propuesta aprobada, delegando en expertos read-only"
+    },
+    "artifactBudget": {
+      "research.md": 20480,
+      "design-system.md": 25600,
+      "wireframes.md": 40960,
+      "layouts.md": 15360,
+      "critique.md": 25600,
+      "design-proposal.md": 20480,
+      "note": "Bytes por artefacto. La tool Write trunca payloads grandes; los expertos escriben por secciones en .tmp/ y ensamblan con scripts/write-md.mjs. El orquestador valida con --check tras cada delegación."
     },
     "baseline": {
       "cleanWorkingTree": true,
@@ -246,6 +261,11 @@
       {
         "type": "execute",
         "description": "(opcional — solo si el usuario aprueba implementar: slices por pantalla/componente con gates por slice. DELEGACIÓN OBLIGATORIA: cada slice se delega al executor vía Task tool con el blueprint (design-proposal.md + slice exacto); el orquestador NUNCA edita código fuente en esta fase, solo valida el retorno del executor: archivos aplicados, gates, commit hash)"
+      },
+      {
+        "type": "delegate",
+        "expert": "expert-critique",
+        "description": "(PARITY GATE — obligatoria tras el slice de integración: audita la UI implementada contra el wireframe canónico aprobado. Checklist en design-proposal: estados del wireframe → componente/hook, copy, orden, presupuestos de interacción. Solo se cierra el scope si la paridad pasa.)"
       }
     ],
     "synthesis": {

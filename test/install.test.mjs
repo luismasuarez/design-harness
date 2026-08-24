@@ -189,3 +189,29 @@ Cualquier tarea que involucre **generar propuestas de diseño UI/UX iterativas**
   assert.equal(agents.split("## Golden Rule: el trabajo de diseño UI/UX pasa por el harness design-harness").length - 1, 1, "una sola golden rule, sin duplicado legacy")
   assert.ok(agents.includes("<!-- DESIGN-HARNESS END -->"), "bloque cerrado")
 })
+
+test("prompts de expertos incluyen escritura robusta (write-md) y budget", () => {
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  const research = cfg.agent["expert-research"].prompt
+  assert.ok(research.includes("write-md.mjs"), "expertos referencian write-md.mjs")
+  assert.ok(research.includes("ESCRITURA ROBUSTA"), "regla de escritura robusta presente")
+  const wireframe = cfg.agent["expert-wireframe"].prompt
+  assert.ok(wireframe.includes("WIREFRAME CANÓNICO"), "regla wireframe canónico presente")
+  assert.ok(wireframe.includes("TOKENS DEL PROYECTO"), "regla de tokens del proyecto presente")
+  assert.ok(wireframe.includes("COBERTURA DE ESTADOS"), "regla de cobertura de estados presente")
+  const orq = cfg.agent["design-orchestrator"].prompt
+  assert.ok(orq.includes("ARTIFACT INTEGRITY"), "orquestador valida integridad de artefactos")
+  assert.ok(orq.includes("PARITY GATE"), "orquestador incluye gate de paridad")
+})
+
+test("gate detect de impeccable en el executor cuando la skill existe", () => {
+  const skillDir = join(project, ".opencode", "skills", "impeccable")
+  mkdirSync(skillDir, { recursive: true })
+  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: impeccable\ndescription: fake\n---\n")
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  assert.ok(cfg.agent.executor.prompt.includes("DETECT GATE"), "executor con DETECT GATE")
+  assert.ok(cfg.agent.executor.prompt.includes("impeccable/scripts/detect.mjs"), "comando detect.mjs presente")
+  assert.ok(cfg.agent["design-orchestrator"].prompt.includes("detect.mjs"), "orquestador audita wireframe con detect.mjs")
+})

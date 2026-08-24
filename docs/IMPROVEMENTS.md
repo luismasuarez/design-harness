@@ -146,3 +146,105 @@ se conservan).
 - `node test/install.test.mjs` en el repo.
 - `run-metrics.mjs --scope <scope>` regenerado para validar `findScore` e
   `incidents`.
+
+---
+
+# Gaps v1.2 (G1–G5) — hallazgos de la segunda iteración
+
+Análisis de las mismas corridas (ota-section + dev-profile) con foco en calidad
+de artefactos, fidelidad wireframe→código y reutilización de las herramientas de
+`impeccable`.
+
+## G1 — La tool Write trunca payloads grandes → escritura fragmentada a mano
+
+**Evidencia** (textos reales de los subagentes):
+- *"El contenido se truncó en la serialización. Escribo el archivo en dos partes"*
+- *"El payload es muy largo para una sola llamada. Lo divido en 4 partes: Write inicial + 3 Edits de append"*
+- *"El contenido es muy largo para una sola escritura. Lo escribo en dos partes"* (research ota-section)
+
+Tamaños reales: `research.md` 42KB, `design-system.md` 56KB, `wireframes.md` 64KB,
+`critique.md` 66KB. Cada experto inventaba su workaround (fragmentar a mano,
+marcas de continuación) → frágil y arriesga corrupción silenciosa; el orquestador
+solo validaba existencia+tamaño.
+
+**Fix**:
+- `scripts/write-md.mjs` (nuevo): ensambla un artefacto desde secciones
+  `docs/design/<scope>/.tmp/` (`--sources`), valida integridad (`--check`) y
+  respeta budget (`--budget`); detecta marcadores de continuación sin resolver.
+- `artifactBudget` por artefacto en el manifest (research 20KB · design-system
+  25KB · wireframes 40KB · layouts 15KB · critique 25KB · design-proposal 20KB).
+- El orquestador valida con `--check` tras cada delegación (ARTIFACT INTEGRITY).
+- Los prompts de expertos prohíben escribir >15KB de un golpe y parten en
+  secciones con `write-md.mjs`.
+
+## G2 — Detector de impeccable como gate de calidad del executor
+
+**Evidencia**: `detect.mjs` de impeccable funciona sobre el repo real — 52
+findings en el wireframe OTA (`design-system-font-size`, `layout-transition`,
+`design-system-color`), respeta `DESIGN.md`, los `advisory` no bloquean, y **0
+findings en `ota-page.tsx`** (código limpio → sin falsos positivos). Es un
+"lint de UX" objetivo post-slice.
+
+**Fix**:
+- Nueva gate del executor **detect** (expect `no-new-warnings`, baseline 0):
+  `node .opencode/skills/impeccable/scripts/detect.mjs --json --no-advisory <files del slice>`.
+  Las warnings nuevas se documentan como deuda, nunca se silencian.
+- En la síntesis, el orquestador audita el `wireframe.html` aprobado con
+  `detect.mjs` y cita los warnings en el design-proposal.
+- La gate se activa automáticamente cuando la skill `impeccable` está instalada
+  (proyecto o global) — `install.mjs` lo detecta.
+
+## G3 — Wireframe canónico vs alternativas (redundancia en la aprobación)
+
+**Evidencia**: el wireframe OTA acumuló subvariantes en un solo archivo:
+`WF-2a/2b/2c`, `WF-3a/3b/3c`, `WF-4a/4b/4c`, `WF-5a/5b/5c/5d`, `v2a/v2b`,
+"opción A". El usuario aprobó la WF-1 (vista default con datos) y las demás
+propuestas no le parecieron atractivas. El wireframe se convirtió en un "museo
+de iteraciones" en vez de un documento aprobable.
+
+**Fix**:
+- Regla **WIREFRAME CANÓNICO**: una variante por pantalla/estado/flujo; sin
+  subvariantes acumuladas.
+- Las alternativas exploradas se documentan en research.md ("Exploración /
+  alternativas descartadas" con justificación), NUNCA en el wireframe.
+- Los refinamientos de critique se aplican IN PLACE (replace), no como WF-5c/5d.
+- La síntesis lista las pantallas canónicas (WF ids aprobados) y el
+  IMPLEMENTATION-PROMPT referencia SOLO esas — la UI final debe ser fiel al
+  wireframe aprobado.
+
+## G4 — Fidelidad wireframe→código (paridad)
+
+**Evidencia**: el critique de paridad que pidió el usuario dio 6.5/10: solo 9/13
+estados plasmados, 1 variante muerta (`channel-without-release`), faltaron
+paginación/filtros/snippet URL. Era un paso ad-hoc, no parte del pipeline.
+
+**Fix**:
+- **PARITY GATE obligatoria** tras el slice de integración: el orquestador
+  delega una auditoría final a `expert-critique` comparando la UI implementada
+  contra el wireframe canónico (estados, copy, orden, presupuestos de
+  interacción). Solo se cierra el scope si la paridad pasa.
+- El design-proposal incluye un **checklist de paridad** (estado del wireframe →
+  componente/hook).
+
+## G5 — Calidad del wireframe (combinar fortalezas)
+
+**Evidencia** (comparativa de los wireframe.html reales):
+- `dev-profile`: 6 estados cubiertos (loading/empty/error/lectura/edicion/
+  guardando) pero con **21 custom props genéricos** (--surface, --muted,
+  --radius-md) → diseño neutro.
+- `ota-section`: extendió los **tokens reales del proyecto** (--card, --input-bd,
+  --popover, --muted-fg, --hover-primary, --r-xl) → mejor diseño y estilo.
+
+**Fix** (reglas para `expert-wireframe`):
+- El `wireframe.html` usa los tokens/DESIGN.md del proyecto; solo los tokens
+  inexistentes se proponen, marcados "propuesta de token".
+- **COBERTURA DE ESTADOS** obligatoria (loading, empty, error, interactivos) +
+  presupuestos de interacción — lo que dev-profile hizo bien, exigido por regla.
+
+---
+
+# Verificación de la v1.2
+
+- `node test/install.test.mjs` → 11/11 (incluye tests de write-md/budget y de la
+  gate detect condicional a la skill impeccable).
+- Reinstalar en el proyecto con `--force` (los prompts/permisos se regeneran).
