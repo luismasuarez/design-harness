@@ -40,7 +40,7 @@ Cruzando las 3 fuentes:
    de refinamientos previos (v1.1, v1.2, ...) para no repetir decisiones.
 2. **Base de sesiones (opencode.db)** — corre el helper de incidentes:
    ```bash
-   node skills/design-orchestrator/scripts/collect-incidents.mjs \
+   node .opencode/skills/harness-audit/scripts/collect-incidents.mjs \
      --db ~/.local/share/opencode/opencode.db \
      --project <proyecto de referencia> --scope <scope reciente> --since <fecha> --md
    ```

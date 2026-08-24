@@ -2,7 +2,7 @@
   "$schema": "https://github.com/luismasuarez/harness-factory/blob/main/schema/harness.manifest.schema.json",
   "harness": {
     "name": "design-harness",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "description": "Genera propuestas de diseño UI/UX iterativas: investigación, sistema de diseño, wireframes y layouts con crítica visual, orquestadas por design-orchestrator",
     "skillDescription": "Diseño UI/UX, wireframes, layouts, design system, propuesta de interfaz, crítica de diseño, audit visual, iteración de diseño, brief de diseño, rediseño de pantallas"
   },

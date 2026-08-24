@@ -103,7 +103,7 @@ memoria) → análisis → propuesta → aprobación → aplicación → persist
 ```
 
 La metodología vive en `.opencode/skills/harness-audit/SKILL.md` y el helper de
-evidencia en `skills/design-orchestrator/scripts/collect-incidents.mjs`
+evidencia en `.opencode/skills/harness-audit/scripts/collect-incidents.mjs`
 (clasifica incidentes: provider_transient, permission_denial, task_cancelled,
 tool_error, write_truncation). Cada ciclo deja su sección en
 [`docs/IMPROVEMENTS.md`](./docs/IMPROVEMENTS.md) y una observación en Engram.
