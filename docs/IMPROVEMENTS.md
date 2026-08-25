@@ -419,3 +419,42 @@ menos tokens por corrida al no arrastrar sesiones sucias en iteraciones de feedb
   + G8-4 en la skill harness-audit.
 - Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
   para que los prompts/reglas nuevos tomen efecto — paso manual del usuario.
+
+---
+
+# v1.5.1 — Allowlist de permisos para el orquestador (fin de la fricción de aprobaciones)
+
+**Hallazgo** (reporte directo del usuario + log): el harness "pide permisos para
+todo, varias veces, y casi siempre lógicos". El orquestador era el **único
+agente sin allowlist**: `install.mjs` generaba `edit: "ask"` y `bash: "ask"`
+planos (mientras expertos y executor sí tenían `docs/design/**` + lista de
+comandos). Evidencia en `~/.local/share/opencode/log/opencode.log`: asks de
+`edit` para que el orquestador escribiera su **propio** `RUN-STATE.json` (2×) y
+`design-proposal.md` (3×), más `bash sort` (10×) y `head` (5×) de inspección.
+Proyección: ~15-25 prompts de aprobación por corrida, casi todos "lógicos".
+
+**Causa raíz**: el fix v1.1 (P1.1) amplió allowlists de expertos/executor pero
+dejó al orquestador con el default `ask` plano. El orquestador nunca edita
+código fuente por diseño (solo el executor), así que darle allow en
+`docs/design/**` + comandos read-only/gates **no reduce seguridad**.
+
+**Fix** (`install.mjs`, `opencode.json`, `SKILL.md`, `test/install.test.mjs`):
+- Nueva constante `BASH_READ_ALLOW` compartida (DRY) para los 3 perfiles:
+  git/ls/find/cat/rg/grep/wc/sed/sort/file/head/tail/mkdir/node/npx/python3.
+- `orchestratorPermissions()`: `edit: { "*": "deny", "docs/design/**": "allow" }`
+  (nunca código fuente) + `bash: { "*": "ask", ...allowlist + pnpm/npm/yarn }`
+  (las gates del baseline). El resto desconocido sigue `ask` (supervisado).
+- Regla **GROUPED COMMANDS** en prompt instalado + SKILL.md: encadenar gates y
+  validaciones en un solo comando bash para no fragmentar en tool calls.
+- Test **G9** que verifica el perfil instalado del orquestador.
+
+**Impacto**: de ~15-25 aprobaciones por corrida a ~0-2; quedan el gate de
+aprobación de la síntesis (`design-proposal.md`) y los comandos fuera de la
+allowlist.
+
+**Verificación**: `node --test test/install.test.mjs` → **27/27** (G9 nuevo),
+`node --check install.mjs` OK.
+
+**Paso manual del usuario**: reinstalar en los proyectos con `/design`
+(`node install.mjs install --force` en **portal_cloud** y **L-Wallet**) para
+regenerar el `opencode.json` con el nuevo perfil.
