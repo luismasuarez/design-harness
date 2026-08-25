@@ -14,9 +14,15 @@
  *   node write-md.mjs --file docs/design/<scope>/research.md \
  *     --sources docs/design/<scope>/.tmp/research.1.md \
  *             docs/design/<scope>/.tmp/research.2.md \
- *     --budget 20480
+ *     --budget 32768
  *   # Validar un artefacto ya escrito (sin tocar):
  *   node write-md.mjs --file docs/design/<scope>/research.md --check
+ *   # Reportar el tamaño de cada sección fuente (guía el recorte dirigido,
+ *   # sin escribir nada; exit 0):
+ *   node write-md.mjs --report --file docs/design/<scope>/research.md \
+ *     --sources docs/design/<scope>/.tmp/research.1.md \
+ *             docs/design/<scope>/.tmp/research.2.md \
+ *     --budget 32768
  *
  * Exit 0 = ok; 1 = error; 2 = advertencia (excede budget / sección vacía).
  *
@@ -30,7 +36,7 @@ import { join, resolve, dirname } from "node:path"
 const CONTINUATION = /\[(?:CONTINUAR|CONTINUE)\][\s\S]*$|<!--\s*(?:CONTINUAR|more|TO BE CONTINUED)[\s\S]*$/i
 
 function parseArgs(argv) {
-  const a = { sources: [], budget: null, check: false, cleanup: null }
+  const a = { sources: [], budget: null, check: false, report: false, cleanup: null }
   for (let i = 0; i < argv.length; i++) {
     const next = () => argv[++i]
     switch (argv[i]) {
@@ -39,6 +45,7 @@ function parseArgs(argv) {
       case "--source": a.sources.push(resolve(next())); break
       case "--budget": a.budget = parseInt(next(), 10); break
       case "--check": a.check = true; break
+      case "--report": a.report = true; break
       case "--cleanup": a.cleanup = resolve(next()); break
     }
   }
@@ -82,8 +89,35 @@ function validate(file, budget) {
   return true
 }
 
+function report(a) {
+  if (!a.file) throw new Error("--file es obligatorio")
+  if (!a.sources.length) throw new Error("--sources vacío (pasa una o más secciones .md)")
+  let total = 0
+  console.log(`report: ${a.file}`)
+  for (const src of a.sources) {
+    if (!existsSync(src)) throw new Error(`sección no encontrada: ${src}`)
+    const body = readFileSync(src, "utf8")
+    const size = Buffer.byteLength(body)
+    total += size
+    const label = src.split("/").pop()
+    const pct = a.budget ? ` (${Math.round((size / a.budget) * 100)}% del budget)` : ""
+    console.log(`  ${size.toString().padStart(7)} bytes  ${label}${pct}`)
+  }
+  console.log(`  ${total.toString().padStart(7)} bytes  TOTAL${a.budget ? ` — budget ${a.budget}` : ""}`)
+  if (a.budget) {
+    const delta = total - a.budget
+    if (delta > 0) {
+      console.log(`  recorte necesario: ${delta} bytes (compacta primero las secciones más pesadas, nunca borres citas clave)`)
+      process.exit(2)
+    }
+    console.log(`  margen disponible: ${-delta} bytes`)
+  }
+  process.exit(0)
+}
+
 function main() {
   const a = parseArgs(process.argv.slice(2))
+  if (a.report) return report(a)
   if (a.check) {
     const ok = validate(a.file, a.budget)
     process.exit(ok ? 0 : 1)

@@ -225,6 +225,43 @@ test("prompts de expertos incluyen escritura robusta (write-md) y budget", () =>
   assert.ok(orq.includes("PARITY GATE"), "orquestador incluye gate de paridad")
 })
 
+test("prompts de expertos incluyen la estrategia G6 (write directo, presupuesto por sección, recorte dirigido)", () => {
+  run("--stack", "both")
+  const cfg = readJson(join(project, "opencode.json"))
+  for (const id of ["expert-research", "expert-design-system", "expert-wireframe", "expert-critique"]) {
+    const p = cfg.agent[id].prompt
+    assert.ok(p.includes("28 KB"), `${id}: umbral de write directo <= 28 KB presente`)
+    assert.ok(p.includes("PRESUPUESTO POR SECCIÓN"), `${id}: presupuesto por sección presente`)
+    assert.ok(p.includes("RECORTE DIRIGIDO"), `${id}: recorte dirigido presente`)
+    assert.ok(p.includes("--report"), `${id}: referencia a write-md --report`)
+    assert.ok(p.includes("Máximo 2 ciclos"), `${id}: límite de 2 ciclos presente`)
+  }
+})
+
+test("write-md.mjs --report lista el tamaño por sección y el recorte necesario (G6-5)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "writemd-report-"))
+  try {
+    const s1 = join(tmp, "sec-1.md")
+    const s2 = join(tmp, "sec-2.md")
+    writeFileSync(s1, "# Sección 1\n\n" + "x".repeat(8000))
+    writeFileSync(s2, "# Sección 2\n\n" + "x".repeat(4000))
+    const script = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "design-orchestrator", "scripts", "write-md.mjs")
+    // Dentro del budget → exit 0 y margen disponible
+    const ok = spawnSync(process.execPath, [script, "--report", "--file", join(tmp, "out.md"), "--sources", s1, s2, "--budget", "20000"], { encoding: "utf8" })
+    assert.equal(ok.status, 0, ok.stderr)
+    assert.ok(ok.stdout.includes("sec-1.md"), "lista la sección 1")
+    assert.ok(ok.stdout.includes("sec-2.md"), "lista la sección 2")
+    assert.ok(ok.stdout.includes("margen disponible"), "reporta margen")
+    // Sobre el budget → exit 2 y recorte necesario con delta exacto
+    const over = spawnSync(process.execPath, [script, "--report", "--file", join(tmp, "out.md"), "--sources", s1, s2, "--budget", "10000"], { encoding: "utf8" })
+    assert.equal(over.status, 2, "exit 2 cuando excede el budget")
+    const total = Buffer.byteLength(readFileSync(s1)) + Buffer.byteLength(readFileSync(s2))
+    assert.ok(over.stdout.includes(`recorte necesario: ${total - 10000} bytes`), `delta exacto en stdout: ${over.stdout}`)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
 test("detecta la raíz del proyecto desde un subdirectorio (sin --project)", () => {
   // Raíz con .git + workspace
   mkdirSync(join(project, ".git"), { recursive: true })

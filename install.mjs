@@ -245,7 +245,13 @@ function renderExpertPrompt(expert, scopeDir, stack = "web") {
   const empirical = expert.id === "expert-research"
     ? `\n- VERIFICACIÓN EMPÍRICA: todo supuesto y todo gap cerrado como "no-gap" DEBE citar evidencia (archivo:línea o comando real ejecutado). Lo que no se pueda verificar se marca como "abierto/requiere verificación" — nunca lo des por cerrado por fe. Si existe una fuente funcional (otro proyecto, CLI propio, backend desplegado), verifica contra ella. Un gap mal cerrado en research cuesta un fix post-freeze.`
     : ""
-  const writing = `\n- ESCRITURA ROBUSTA: si el deliverable supera ~15 KB (la tool Write trunca payloads grandes), escríbelo POR SECCIONES en docs/design/<scope>/.tmp/<artifact>.<n>.md (una Write pequeña por sección) y ensámblalo con: node .opencode/skills/design-orchestrator/scripts/write-md.mjs --file <destino> --sources <secciones ordenadas> --budget <budget-del-artefacto> --cleanup docs/design/<scope>/.tmp. Valida al final con --check. NUNCA partas el archivo a mano con marcas de continuación ([CONTINUAR], <!-- more -->) — invalidan el artefacto.`
+  const writing = `\n- ESCRITURA ROBUSTA (límite real medido de la tool Write: writes OK de 33-46KB en corridas reales; el server no limita, el límite es la serialización del tool call):
+  - Si el deliverable estimado <= 28 KB, escríbelo con UNA sola Write directa al destino. No uses .tmp/ ni ensamblaje sin necesidad.
+  - Si estimas > 28 KB (o el write directo falla), escríbelo POR SECCIONES en docs/design/<scope>/.tmp/<artifact>.<n>.md y ensámblalo con: node .opencode/skills/design-orchestrator/scripts/write-md.mjs --file <destino> --sources <secciones ordenadas> --budget <budget-del-artefacto> --cleanup docs/design/<scope>/.tmp.
+  - PRESUPUESTO POR SECCIÓN ANTES DE ESCRIBIR: reparte el budget del artefacto entre las secciones (la suma debe quedar <= 90% del budget). Estima el tamaño de cada sección mientras la redactas, no después del check.
+  - Si --check falla por budget: RECORTE DIRIGIDO, nunca regeneres todo desde cero. Usa el delta exacto que reporta el script y compacta por prioridad: primero "Supuestos/alternativas" y el copy redundante, después contexto; NUNCA borres citas archivo:línea ni estados obligatorios. Para ver cuánto pesa cada sección: write-md.mjs --report --file <destino> --sources <secciones>.
+  - Máximo 2 ciclos de regeneración completa. Si el check sigue fallando tras el 2º recorte dirigido, DETENTE y reporta al orquestador el delta y el plan de recorte en vez de seguir iterando.
+  - Valida al final con: write-md.mjs --file <destino> --check --budget <budget-del-artefacto>. NUNCA partas el archivo a mano con marcas de continuación ([CONTINUAR], <!-- more -->) — invalidan el artefacto.`
   const wireframeRules = expert.id === "expert-wireframe"
     ? (() => {
         const stackSkills = applicable.filter((s) => ["vercel-react-best-practices", "vercel-react-native-skills"].includes(s))

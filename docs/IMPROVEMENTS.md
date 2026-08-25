@@ -248,3 +248,53 @@ paginación/filtros/snippet URL. Era un paso ad-hoc, no parte del pipeline.
 - `node test/install.test.mjs` → 11/11 (incluye tests de write-md/budget y de la
   gate detect condicional a la skill impeccable).
 - Reinstalar en el proyecto con `--force` (los prompts/permisos se regeneran).
+## G6 — Bucle de regeneración por budget (expert-research ota-signing-keys)
+
+**Evidencia** (run `5bff0b48`, sesión `ses_fc9e7f2eff...`, portal_cloud, 2026-08-24):
+- El subagente expert-research quedó 15.9 min en bucle: 9 ciclos de regeneración
+  completa de `.tmp/research-1..4.md` + ensamblaje, con 8 checks de budget
+  fallidos (32611 → 24668 → 24235 → 22844 → 21725 → 21530 → 21410 → 20639,
+  todos > 20480) hasta acertar en el 9º (20446 OK). 69 pasos de loop, ~208k
+  tokens (117,720 in / 90,792 out), 2 tool_errors de edit sobre `.tmp` con
+  oldString desactualizado. Terminó "Task completed" y el pipeline continuó.
+- **Medición del límite real de la tool Write (v1.18.22)**: el código fuente
+  (repo sst/opencode, `tool/write.ts`) NO limita el tamaño del content
+  (`Schema.String` sin validación; write directo con `fs.writeWithDirs`). El
+  límite real es la serialización del tool call en el output del modelo. Writes
+  completados OK en el historial real (mismo modelo deepseek-v4-flash): 33,445
+  bytes (design-system.md, 24/08, un solo write) y 46,801 bytes (wireframe.html,
+  22/08); máximo histórico 87,924 bytes. Los 41 writes con error del historial
+  son permisos/schema/aborts — **cero por tamaño**.
+- El primer intento del bucle (32,611 bytes) era escribible en un solo write; el
+  budget de 20,480 forzó 8 recortes y ~12KB de contenido valioso descartado sin
+  necesidad. En vivo, expert-design-system recortó design-system.md (33,445 →
+  27,597) contra un budget de 25,600 que ya era válido.
+
+**Fix (v1.3)**:
+- **Budgets recalibrados al límite empírico**: research 20480→32768,
+  design-system 25600→32768, wireframes 40960→49152, layouts 15360→20480,
+  critique 25600→32768, design-proposal 20480→32768 (`harness.manifest.json`).
+- **Write directo si ≤ 28 KB**: el experto estima el tamaño ANTES de escribir;
+  `.tmp/`/`--sources` solo si > 28 KB o si el write directo falla (antes el
+  umbral era ~15 KB y se asumía que la tool trunca — falso).
+- **Presupuesto por sección al 90% antes de escribir**: repartir el budget entre
+  secciones; nunca descubrir el exceso recién en el check.
+- **Recorte dirigido con delta**: si `--check` falla, compactar por prioridad
+  (supuestos/alternativas → contexto; nunca borrar citas archivo:línea) usando
+  el delta exacto del script; **nunca regenerar todo desde cero**; máx 2 ciclos
+  → STOP y reportar al orquestador (`SKILL.md` Artifact integrity + Retry policy
+  + bloque ESCRITURA ROBUSTA de `install.mjs`).
+- **`write-md.mjs --report`**: lista el tamaño por sección fuente y el recorte
+  necesario en bytes (exit 2 si excede), para guiar el recorte dirigido.
+- Tests: 21/21 (2 nuevos: estrategia G6 en prompts + `--report`).
+
+**Impacto esperado**: un artefacto que antes costó 16 min / ~208k tokens (9
+ciclos) se escribe en 1 intento conservando el contenido completo.
+
+---
+
+# Verificación de la v1.3
+
+- `node --test` → 21/21 (incluye tests de la estrategia G6 y de `--report`).
+- Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
+  para que los prompts/budgets nuevos tomen efecto.
