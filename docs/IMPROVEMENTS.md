@@ -349,3 +349,73 @@ ni reintroducen contenido corregido.
 - `node --check` en `install.mjs` y `write-md.mjs` — sintaxis OK.
 - Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
   para que los prompts/reglas nuevos tomen efecto.
+
+---
+
+## G8 — Redundancia de wireframe (contexto fuera de alcance) + sesiones sucias por iteración de feedback (ota-signing-keys)
+
+**Evidencia** (portal_cloud, 2026-08-24/25; comparado contra app-cards-ota que el usuario aprobó como correcta):
+
+1. **Sesión de experto reutilizada en TODAS las iteraciones de feedback pre-aprobación**:
+   el orquestador delegó #5-#10 con `task_id` de sesiones previas (research,
+   design-system ×2, wireframe, critique ×2). La sesión de expert-design-system
+   llegó a **1061 parts** (vs 42 en app-cards-ota, que usó sesión nueva en 13/13
+   delegaciones). La DELTA RULE existente solo cubría "artefacto ya aprobado" →
+   el orquestador la eludió tratando el feedback pre-aprobación como "iteración".
+   La doc oficial de opencode confirma la mecánica (`sessions.create`: reusar un
+   id = reutilizar la sesión con todo su historial; omitirlo = sesión nueva).
+2. **Wireframe reprodujo contenido fuera de alcance**: el scope era solo "Code
+   signing", pero el wireframe.html reprodujo el panel **Distribución íntegro**
+   (canales, rollout, releases v1.4.x con badges, historial — líneas 318-364).
+   app-cards-ota en el mismo contexto usó "contexto mínimo: breadcrumb + header +
+   1 canal de ejemplo; Cero cambios" (wireframe.html:611,677).
+3. **Controles inventados sin base en data real**: select "Variante del
+   certificado" prod/preview en 5 lugares (395, 637, 662, 677, 695) cuando el
+   research §5.1 fija "cadena ROOT/LEAF **única por aplicación**" (no hay certs
+   por channel). El critique lo validó como "A — Select prod/preview ✅ Cumplida"
+   (critique.md:121) → **falso verde estructural**: el gate de calidad premiaba
+   la redundancia y la infidelidad en lugar de penalizarlas.
+
+**Fix (v1.5 — G8-1..5)**:
+- **G8-1 SESIÓN LIMPIA (regla universal)**: TODA delegación nueva (fase, delta,
+  iteración de feedback, ronda 2, re-auditoría) SIN `task_id`; `task_id` solo
+  para retry transitorio del MISMO intento (máx 3). Pasar el estado ACTUAL del
+  artefacto en el prompt de cada iteración. Reemplaza la DELTA RULE (que solo
+  cubría "ya aprobado"). (`install.mjs` orquestador + SKILL.md).
+- **G8-2 SCOPE FIDELITY (expert-wireframe)**: contexto existente fuera de
+  alcance = placeholder mínimo declarado ("contexto — sin cambios"), nunca
+  reproducción de contenido interno; detalle + todos los estados solo para lo que
+  el scope toca. (`install.mjs` wireframeRules + manifest + SKILL.md).
+- **G8-3 FIDELIDAD DE DATOS (expert-wireframe)**: todo control/estado deriva de
+  dato real verificado (cita archivo:línea/DTO/API); dato inexistente → "no
+  aplica", no se dibuja el control. (`install.mjs` + manifest).
+- **G8-5 Heurísticas de critique**: SCOPE FIDELITY y FIDELIDAD DE DATOS como
+  heurísticas que penalizan duplicación de contexto fuera de alcance y controles
+  sin anclaje; el veredicto APROBADO exige fidelidad de alcance Y datos, además
+  del score. Cierra el falso verde: ignorar las reglas G8-2/3 ahora cuesta
+  puntos y bloquea la aprobación. (`install.mjs` critiqueRules + manifest + SKILL.md).
+- **G8-4**: fix del comando de tests en `.opencode/skills/harness-audit/SKILL.md`
+  (`node --test test/install.test.mjs`, no `test/` — Node ≥24 no resuelve el dir
+  con slash y da un falso rojo "Cannot find module …/test").
+- Version bump: harness.manifest.json → **1.5.0**.
+
+**Aprendizaje de la comparación**: lo que hizo bien app-cards-ota (sesiones
+nuevas 13/13, contexto existente = placeholder mínimo, reutilización de estados
+"sin cambios") es exactamente lo que las reglas G8 codifican. La causa raíz no
+era solo instrucción del wireframe sino la **ausencia de heurísticas de
+verificación** — sin G8-5 el critique valida y premia la redundancia.
+
+**Impacto esperado**: wireframes que representan solo lo que se va a aprobar
+(fieles al console real), sin duplicar secciones existentes ni inventar controles;
+menos tokens por corrida al no arrastrar sesiones sucias en iteraciones de feedback.
+
+# Verificación de la v1.5
+
+- `node --test test/install.test.mjs` → **26/26** (3 tests G8 nuevos: SESIÓN
+  LIMPIA en orquestador, SCOPE FIDELITY/FIDELIDAD DE DATOS en wireframe, y
+  heurísticas G8-5 en critique).
+- `node --check install.mjs test/install.test.mjs` — sintaxis OK.
+- Verificación manual: prompts instalados contienen las 5 reglas (G8-1..3, G8-5)
+  + G8-4 en la skill harness-audit.
+- Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
+  para que los prompts/reglas nuevos tomen efecto — paso manual del usuario.

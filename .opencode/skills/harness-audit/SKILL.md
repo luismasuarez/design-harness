@@ -25,7 +25,7 @@ manual (nunca lo ejecutas tú).
 ## Fase 0 · Baseline (gate)
 
 1. `git status --short` — debe estar limpio (o confirmado con el usuario).
-2. `node --test test/` — suite del harness verde (mínimo los tests del instalador).
+2. `node --test test/install.test.mjs` — suite del harness verde (NO `node --test test/`: en Node ≥24 no resuelve el dir con slash y da un falso rojo "Cannot find module …/test").
 3. `node install.mjs install --check` en un proyecto de referencia si aplica.
 
 Si el baseline falla, **STOP** y reporta; nunca refines sobre una base roja.

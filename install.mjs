@@ -262,8 +262,15 @@ function renderExpertPrompt(expert, scopeDir, stack = "web") {
           : ""
         return `\n- WIREFRAME CANÓNICO: UNA variante por pantalla/estado/flujo. Sin subvariantes (WF-5c/5d, v2a/v2b, "opción A/B"). Las alternativas exploradas van a research.md (sección "Exploración / alternativas descartadas" con justificación), NUNCA al wireframe.
 - TOKENS DEL PROYECTO: el wireframe.html usa los CSS custom props/tokens reales de DESIGN.md y del design system del proyecto; solo los tokens inexistentes se proponen, marcados como "propuesta de token" (el critique los valida).
-- COBERTURA DE ESTADOS: cubre SIEMPRE loading, empty, error y los estados interactivos de cada pantalla (lectura/edición/guardando), con presupuestos de interacción (clics máx. por acción).${stackNote}`
+- COBERTURA DE ESTADOS: cubre SIEMPRE loading, empty, error y los estados interactivos de cada pantalla (lectura/edición/guardando), con presupuestos de interacción (clics máx. por acción).
+- SCOPE FIDELITY: el wireframe representa SOLO lo que el scope introduce o modifica. Las secciones/pantallas existentes que el scope NO toca se muestran como PLACEHOLDER mínimo declarado ("contexto — sin cambios"): label + estado, sin reproducir su contenido interno (canales, tablas, badges, historial, controles). NUNCA dibujes contenido interno de secciones fuera de alcance aunque conozcas cómo se ven (caso real: wireframe que reprodujo el panel Distribución completo cuando el scope era solo Code signing).
+- FIDELIDAD DE DATOS: todo control y todo estado del wireframe debe derivar de un dato real verificado (DTO del API, contrato, research con cita archivo:línea). Si el dato no existe en el modelo real (p.ej. "certs por channel" cuando el cert es único por aplicación), NO dibujes el control — documéntalo como "no aplica" y consúltalo al orquestador. Un select/combobox/toggle inventado sin base en la data real rompe la fidelidad de lo que se aprueba (caso real: select "prod/preview" de variante de cert que no existe).${stackNote}`
       })()
+    : ""
+  const critiqueRules = expert.id === "expert-critique"
+    ? `\n- SCOPE FIDELITY (heurística de crítica): penaliza wireframes que reproduzcan secciones/pantallas existentes que el scope NO toca. El contexto existente fuera de alcance debe ser placeholder declarado ("contexto — sin cambios"), nunca contenido interno duplicado (canales, tablas, badges, historial). Un wireframe que duplique contenido fuera de alcance NO es APROBADO aunque el resto puntúe alto (caso real ota-signing-keys: se validó como ✅ el panel Distribución reproducido íntegro).
+- FIDELIDAD DE DATOS (heurística de crítica): verifica que todo control y estado del wireframe tenga anclaje en data real (cita archivo:línea, DTO, API, research). Un control inventado sin base en el modelo real (p.ej. select de "variante del certificado" cuando el cert es único por aplicación) es un fail de fidelidad y NO es APROBADO. Reporta cada control sin anclaje con la cita faltante.
+- El veredicto final APROBADO exige fidelidad de alcance Y fidelidad de datos, además del umbral de score.`
     : ""
   return [
     `You are the ${expert.roleLabel} expert in the ${HARNESS_NAME} harness.`,
@@ -282,6 +289,7 @@ function renderExpertPrompt(expert, scopeDir, stack = "web") {
     `${empirical}`,
     `${writing}`,
     `${wireframeRules}`,
+    `${critiqueRules}`,
     `${override}`,
     `- Return a concise summary to the orchestrator: ${expert.summary}.`,
   ].filter((l) => l.trim() !== "" || l === "").join("\n")
@@ -355,7 +363,7 @@ function renderOrchestratorPrompt(gates, packageFilter, hasImpeccable) {
     ``,
     `RETRY POLICY: if a delegated subagent fails with a transient error (Upstream request failed, Endpoint is unavailable, network_error, invalid_request, response was not valid JSON), RETRY up to 3 times with backoff, resuming the SAME task_id if possible. Only after 3 failures apply the fail-safe rule (load the expert's skill yourself and inject its methodology). Record each retry in RUN-STATE.json and in the final report.`,
     ``,
-    `DELTA RULE: un delta (refinamiento/actualización de un artefacto ya aprobado) se delega SIEMPRE con la tool Task SIN task_id — sesión nueva y limpia. NUNCA reutilices la sesión del experto para un delta (acumula el historial completo: un delta de design-system.md sobre la sesión de la ronda 1 llegó a 840 parts / 367k tokens y reintrodujo una sección duplicada que el usuario ya había corregido). Al delegar un delta, pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido + path).`,
+    `SESIÓN LIMPIA (regla universal): TODA delegación nueva vía la tool Task — fase del pipeline, delta, iteración de feedback pre-aprobación, ronda 2 de critique, re-auditoría de paridad — se delega SIN task_id: opencode crea una sesión nueva y limpia (documentado en sessions.create: reusar un id reutiliza la sesión existente con todo su historial). NUNCA reutilices la sesión del experto para contenido nuevo (una sesión de expert-design-system llegó a 1061 parts / contexto sucio y reintrodujo secciones duplicadas — caso real ota-signing-keys). task_id SOLO se reutiliza para retry transitorio del MISMO intento (máx 3, ver RETRY POLICY). Al delegar una iteración o delta, pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido + path) — nunca asumas que el experto conoce el archivo ni su historial.`,
     ``,
     `Synthesis (gate): consolidate all artifacts into docs/design/<scope>/design-proposal.md as surgical slices — un slice = una pantalla o componente del scope; sin cambiar contratos existentes; cada slice verificable con las gates del proyecto antes del commit. OBLIGATORIO: cuando el scope es una pantalla/sección, incluye un slice final de INTEGRACIÓN (conectar los componentes en la página real: routing, data fetching, estados loading/empty/error) — los slices por componente sin integración dejan la UI vacía aunque las gates pasen verdes. LISTA de pantallas canónicas (WF ids aprobados): la síntesis y el IMPLEMENTATION-PROMPT referencian SOLO esas; las alternativas descartadas quedan en research, no se implementan.${detectNote} PRESENT the plan and STOP for user approval.`,
     ``,

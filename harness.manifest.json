@@ -2,7 +2,7 @@
   "$schema": "https://github.com/luismasuarez/harness-factory/blob/main/schema/harness.manifest.schema.json",
   "harness": {
     "name": "design-harness",
-    "version": "1.3.0",
+    "version": "1.5.0",
     "description": "Genera propuestas de diseño UI/UX iterativas: investigación, sistema de diseño, wireframes y layouts con crítica visual, orquestadas por design-orchestrator",
     "skillDescription": "Diseño UI/UX, wireframes, layouts, design system, propuesta de interfaz, crítica de diseño, audit visual, iteración de diseño, brief de diseño, rediseño de pantallas"
   },
@@ -70,7 +70,7 @@
           { "ref": "expert-research.deliverable" },
           { "ref": "expert-design-system.deliverable" }
         ],
-        "task": "produce los wireframes de cada pantalla del scope (estructura, jerarquía, grid, breakpoints responsive), el layout spec en layouts.md (spacing, alineación, ritmo) y un wireframe.html estático lo-fi que renderice todas las pantallas para captura visual. STACK-AWARE: decide el target del scope a partir del brief y del research (móvil React Native/Expo si el proyecto o el scope es móvil; web en otro caso) y aplica la skill de stack que tengas cargada para el target correcto (patrones móviles: listas virtualizadas, safe areas, navegación nativa, expo-image, Pressable; patrones web: waterfalls, bundle, fetching). Los patrones de componentes del wireframe deben reflejar el target real, aunque el wireframe.html siga siendo HTML lo-fi para captura en navegador.",
+        "task": "produce los wireframes de cada pantalla del scope (estructura, jerarquía, grid, breakpoints responsive), el layout spec en layouts.md (spacing, alineación, ritmo) y un wireframe.html estático lo-fi que renderice todas las pantallas para captura visual. SCOPE FIDELITY: el wireframe representa SOLO lo que el scope introduce o modifica; las secciones/pantallas existentes que el scope NO toca se muestran como placeholder mínimo declarado (\"contexto — sin cambios\": label + estado), NUNCA reproduciendo su contenido interno (canales, tablas, badges, historial, controles). FIDELIDAD DE DATOS: todo control/estado deriva de un dato real verificado (DTO, API, research con cita archivo:línea); si el dato no existe en el modelo real (p.ej. certs por channel cuando el cert es único por app), NO se dibuja el control — se documenta \"no aplica\" y se consulta al orquestador. STACK-AWARE: decide el target del scope a partir del brief y del research (móvil React Native/Expo si el proyecto o el scope es móvil; web en otro caso) y aplica la skill de stack que tengas cargada para el target correcto (patrones móviles: listas virtualizadas, safe areas, navegación nativa, expo-image, Pressable; patrones web: waterfalls, bundle, fetching). Los patrones de componentes del wireframe deben reflejar el target real, aunque el wireframe.html siga siendo HTML lo-fi para captura en navegador.",
         "overrides": {
           "prompt": "Escribe tres artefactos bajo docs/design/<scope>/: wireframes.md, layouts.md y wireframe.html. El wireframe.html debe ser autocontenido (una sola página, CSS inline o Tailwind CDN, sin dependencias ni builds) y abrible en un navegador sin servidor. Si el target es móvil (React Native/Expo), usa las guías de tu skill de stack móvil para los patrones de componentes del wireframe."
         },
@@ -94,7 +94,7 @@
           "docs/design/<scope>/layouts.md",
           "docs/design/<scope>/screenshots/"
         ],
-        "task": "audita la propuesta de diseño con la metodología de impeccable (critique/audit): score por categoría (jerarquía visual, tipografía, color y contraste, spacing, responsive, accesibilidad, UX copy), issues priorizados por severidad y recomendaciones accionables; si existen screenshots en docs/design/<scope>/screenshots/, audita la imagen real",
+        "task": "audita la propuesta de diseño con la metodología de impeccable (critique/audit): score por categoría (jerarquía visual, tipografía, color y contraste, spacing, responsive, accesibilidad, UX copy), issues priorizados por severidad y recomendaciones accionables; si existen screenshots en docs/design/<scope>/screenshots/, audita la imagen real. SCOPE FIDELITY (heurística): penaliza wireframes que reproduzcan secciones/pantallas existentes que el scope NO toca (contexto fuera de alcance = placeholder declarado, nunca contenido interno duplicado); un wireframe que duplique contenido fuera de alcance NO es APROBADO aunque el resto puntúe alto. FIDELIDAD DE DATOS (heurística): verifica que todo control/estado del wireframe tenga anclaje en data real (cita archivo:línea, DTO, API, research); un control inventado sin base en el modelo real (p.ej. select de 'variante del certificado' cuando el cert es único por app) es fail de fidelidad y NO es APROBADO; reporta cada control sin anclaje con la cita faltante. El veredicto final APROBADO exige fidelidad de alcance Y fidelidad de datos, además del umbral de score.",
         "summary": "score global, issues críticos priorizados y el artifact path escrito",
         "trigger": ["critique", "audit", "review", "heurísticas", "score"],
         "overrides": {

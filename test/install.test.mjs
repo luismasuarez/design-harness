@@ -240,13 +240,14 @@ test("prompts de expertos incluyen la estrategia G6 (write directo, presupuesto 
   }
 })
 
-test("el orquestador incluye la DELTA RULE (sesión nueva, sin task_id)", () => {
+test("el orquestador incluye la SESIÓN LIMPIA (toda delegación nueva sin task_id)", () => {
   run("--stack", "both")
   const cfg = readJson(join(project, "opencode.json"))
   const orq = cfg.agent["design-orchestrator"].prompt
-  assert.ok(orq.includes("DELTA RULE"), "orquestador con DELTA RULE")
-  assert.ok(orq.includes("SIN task_id"), "DELTA RULE prohíbe reutilizar la sesión del experto")
-  assert.ok(orq.includes("NUNCA reutilices la sesión del experto"), "DELTA RULE explícita")
+  assert.ok(orq.includes("SESIÓN LIMPIA"), "orquestador con SESIÓN LIMPIA")
+  assert.ok(orq.includes("SIN task_id"), "SESIÓN LIMPIA prohíbe reutilizar la sesión del experto")
+  assert.ok(orq.includes("NUNCA reutilices la sesión del experto"), "SESIÓN LIMPIA explícita")
+  assert.ok(orq.includes("retry transitorio del MISMO intento"), "task_id solo para retry transitorio")
 })
 
 test("write-md.mjs --report lista el tamaño por sección y el recorte necesario (G6-5)", () => {
@@ -356,4 +357,35 @@ test("gate detect de impeccable en el executor (skill embebida siempre presente)
   assert.ok(cfg.agent.executor.prompt.includes("DETECT GATE"), "executor con DETECT GATE")
   assert.ok(cfg.agent.executor.prompt.includes("impeccable/scripts/detect.mjs"), "comando detect.mjs presente")
   assert.ok(cfg.agent["design-orchestrator"].prompt.includes("detect.mjs"), "orquestador audita wireframe con detect.mjs")
+})
+
+test("G8-1: orquestador con SESIÓN LIMPIA universal (toda delegación nueva sin task_id)", () => {
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  const orq = cfg.agent["design-orchestrator"].prompt
+  assert.ok(orq.includes("SESIÓN LIMPIA"), "orquestador con SESIÓN LIMPIA")
+  assert.ok(orq.includes("SIN task_id"), "prohíbe task_id en delegaciones nuevas")
+  assert.ok(orq.includes("retry transitorio del MISMO intento"), "task_id solo para retry transitorio")
+  assert.ok(!orq.includes("DELTA RULE"), "DELTA RULE vieja reemplazada por SESIÓN LIMPIA")
+})
+
+test("G8-2/3: expert-wireframe con SCOPE FIDELITY y FIDELIDAD DE DATOS", () => {
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  const wf = cfg.agent["expert-wireframe"].prompt
+  assert.ok(wf.includes("SCOPE FIDELITY"), "wireframe con SCOPE FIDELITY")
+  assert.ok(wf.includes('PLACEHOLDER mínimo declarado') || wf.includes('placeholder mínimo declarado'), "contexto fuera de alcance = placeholder")
+  assert.ok(wf.includes('no reproduciendo su contenido interno') || wf.includes('sin reproducir su contenido interno'), "nunca reproducir contenido interno")
+  assert.ok(wf.includes("FIDELIDAD DE DATOS"), "wireframe con FIDELIDAD DE DATOS")
+  assert.ok(wf.includes('"no aplica"'), "dato inexistente → no aplica")
+})
+
+test("G8-5: expert-critique con heurísticas de SCOPE FIDELITY y FIDELIDAD DE DATOS", () => {
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  const cr = cfg.agent["expert-critique"].prompt
+  assert.ok(cr.includes("SCOPE FIDELITY (heurística"), "critique con heurística de alcance")
+  assert.ok(cr.includes("FIDELIDAD DE DATOS (heurística"), "critique con heurística de datos")
+  assert.ok(cr.includes("NO es APROBADO"), "veredicto exige fidelidad")
+  assert.ok(cr.includes("además del umbral de score"), "fidelidad es requisito, no solo score")
 })

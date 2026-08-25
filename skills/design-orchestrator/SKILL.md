@@ -64,7 +64,12 @@ completed, critique threshold, retries. This is the resume source for Phase 0.
    - **WIREFRAME CANÓNICO**: una variante por pantalla/estado/flujo. Sin subvariantes acumuladas (WF-5c/5d, v2a/v2b, "opción A/B") — el usuario aprueba UNA versión y la UI final debe ser fiel a esa.
    - **Tokens del proyecto**: el wireframe.html usa los CSS custom props/tokens reales de DESIGN.md; los tokens nuevos se marcan "propuesta de token" (los valida el critique).
    - **Cobertura de estados**: cubre SIEMPRE loading, empty, error y los estados interactivos (lectura/edición/guardando) de cada pantalla, con presupuestos de interacción.
+   - **SCOPE FIDELITY**: el wireframe representa SOLO lo que el scope introduce o modifica. Las secciones/pantallas existentes que el scope NO toca se muestran como placeholder mínimo declarado ("contexto — sin cambios": label + estado), NUNCA reproduciendo su contenido interno (canales, tablas, badges, historial, controles). Aunque conozcas cómo se ven, no las dibujes (caso real: panel Distribución reproducido íntegro cuando el scope era solo Code signing).
+   - **FIDELIDAD DE DATOS**: todo control/estado del wireframe deriva de un dato real verificado (DTO, API, research con cita archivo:línea). Si el dato no existe en el modelo real (p.ej. certs por channel cuando el cert es único por app), NO se dibuja el control — se documenta "no aplica" y se consulta al orquestador. Un select/combobox/toggle inventado rompe la fidelidad de lo que se aprueba (caso real: select "prod/preview" de variante de cert inexistente).
 4. **expert-critique** — (ronda 1 — score por heurísticas sobre wireframes + layouts. ANTES de delegar, el orquestador renderiza wireframe.html en chrome-devtools y prepara **siempre** evidencia ligera: screenshots en **JPEG ≤ 250 KB**, snapshot de accesibilidad (a11y) y JSON de `render-audit.js`, todos en `docs/design/<scope>/screenshots/`. **Prohíbe al critique leer PNG/archivos > 500 KB** — bloquea a subagentes sin visión. El critique inyecta `scripts/render-audit.js` vía evaluate para las métricas medidas: contraste WCAG real, ritmo, targets, overflow, focus — sección 'Métricas medidas' en critique.md; si falla, degrada a snapshot de accesibilidad + DOM). Handoff: pasa wireframes + layouts + screenshots como inputs, ruta de salida `docs/design/<scope>/critique.md`.
+   - **SCOPE FIDELITY (heurística)**: penaliza wireframes que reproduzcan secciones/pantallas existentes que el scope NO toca (contexto fuera de alcance = placeholder declarado, nunca contenido interno duplicado). Un wireframe que duplique contenido fuera de alcance NO es APROBADO aunque el resto puntúe alto (caso real ota-signing-keys: se validó como ✅ el panel Distribución reproducido íntegro).
+   - **FIDELIDAD DE DATOS (heurística)**: verifica que todo control/estado del wireframe tenga anclaje en data real (cita archivo:línea, DTO, API, research). Un control inventado sin base en el modelo real (p.ej. select de "variante del certificado" cuando el cert es único por app) es fail de fidelidad y NO es APROBADO. Reporta cada control sin anclaje con la cita faltante.
+   - El veredicto final APROBADO exige fidelidad de alcance Y fidelidad de datos, además del umbral de score.
 5. **expert-wireframe** — (ronda 2 — SOLO si el score de critique < umbral: refina wireframes con critique.md como input; si el score es aceptable, se omite). Handoff: pasa `critique.md` como input.
 6. **expert-critique** — (ronda 2 — re-evaluación final si hubo ronda 2; se omite si no hubo). Handoff: re-audita los wireframes refinados.
 
@@ -135,16 +140,19 @@ no puede ajustar el tamaño, STOP y reporta el delta al usuario en vez de
 regenerar en bucle (caso real: 9 ciclos de regeneración de research.md por un
 check de budget que falló 8 veces).
 
-### Deltas en sesión nueva (prohibido reutilizar la sesión del experto)
-Un delta (refinamiento, actualización de un artefacto ya aprobado) se delega
-SIEMPRE con la tool Task **sin `task_id`** — opencode crea una sesión nueva y
-limpia. **Nunca reutilices la sesión del experto** (`task_id` de una delegación
-anterior): acumula todo el historial (el delta de design-system.md sobre la
-sesión de la ronda 1 llegó a 840 parts / 367k tokens in / 81 min y el experto,
-con el estado viejo en contexto, reintrodujo una sección duplicada que el
-usuario ya había corregido — caso real ota-signing-keys). Al delegar un delta,
-pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido +
-path), nunca asumas que el experto conoce el archivo.
+### Sesión limpia (regla universal — prohibido reutilizar la sesión del experto)
+TODA delegación nueva vía la tool Task — fase del pipeline, delta, iteración de
+feedback pre-aprobación, ronda 2 de critique, re-auditoría de paridad — se delega
+**sin `task_id`**: opencode crea una sesión nueva y limpia (`sessions.create`:
+reusar un id reutiliza la sesión existente con todo su historial). **Nunca
+reutilices la sesión del experto** para contenido nuevo: acumula todo el historial
+(un delta de design-system.md sobre la sesión de la ronda 1 llegó a 840 parts /
+367k tokens y reintrodujo una sección duplicada que el usuario ya había corregido;
+en ota-signing-keys una sesión de design-system llegó a 1061 parts por iterar sobre
+la misma sesión). `task_id` SOLO se reutiliza para retry transitorio del MISMO
+intento (máx 3, ver Retry policy). Al delegar una iteración o delta, pasa en el
+prompt el estado ACTUAL del artefacto (contenido ya corregido + path), nunca
+asumas que el experto conoce el archivo.
 
 ### Synthesis (HARD GATE — approval required)
 Consolidate all artifacts into `docs/design/<scope>/design-proposal.md`:
