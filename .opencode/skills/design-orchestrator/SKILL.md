@@ -78,15 +78,46 @@ was actually written to disk and is non-trivial. If an expert fails or returns
 nothing useful, STOP and report instead of proceeding.
 
 ### Artifact integrity (escritura robusta)
-La tool Write trunca payloads grandes y los expertos partían los archivos a
-mano con marcas de continuación — ambas cosas quedan prohibidas. Valida cada
-artefacto tras la delegación con:
+La tool Write de opencode NO trunca por un límite del server (medido: writes OK
+de 33-46 KB en corridas reales); el límite real es la serialización del tool
+call en el output del modelo. Por eso: un artefacto estimado <= 28 KB se
+escribe con UNA sola Write directa — sin `.tmp/` ni ensamblaje sin necesidad.
+Solo si estimas > 28 KB (o el write directo falla) usa secciones en `.tmp/` y
+ensambla con `write-md.mjs --sources`. Valida cada artefacto tras la delegación
+con:
 `node .opencode/skills/design-orchestrator/scripts/write-md.mjs --file <artefacto> --check --budget <bytes>`
 Confirmar que existe, termina completo y no tiene marcadores sin resolver.
-Budgets por artefacto (bytes): research 20480 · design-system 25600 · wireframes
-40960 · layouts 15360 · critique 25600 · design-proposal 20480. Si el experto
-debe escribir >~15 KB, usa `write-md.mjs` con `--sources` (secciones en
-`.tmp/`), nunca un Write gigante.
+Budgets por artefacto (bytes, calibrados al límite empírico): research 32768 ·
+design-system 32768 · wireframes 49152 · layouts 20480 · critique 32768 ·
+design-proposal 32768.
+
+**Presupuesto por sección ANTES de escribir**: el experto reparte el budget
+entre las secciones (suma <= 90% del budget) y estima el tamaño de cada una
+mientras la redacta — nunca descubre el exceso recién en el check (caso real:
+primer intento de research con +59% sobre budget → 8 regeneraciones en bucle).
+
+**Si `--check` falla por budget**: recorte DIRIGIDO, nunca regenerar todo desde
+cero. Usar el delta exacto que reporta el script y compactar por prioridad
+(primero supuestos/alternativas y copy redundante, después contexto; nunca
+borrar citas archivo:línea ni estados obligatorios). Para ver cuánto pesa cada
+sección: `write-md.mjs --report --file <artefacto> --sources <secciones>`.
+Máximo 2 ciclos de regeneración completa; si sigue fallando, STOP y reporta el
+delta y el plan de recorte en vez de seguir iterando.
+
+**Tope de edits correctivos (anti-edit-storm)**: el artefacto se escribe con
+UNA escritura (write directo o `--sources`), nunca con edits incrementales.
+Como máximo **5 edits correctivos** por artefacto (ajustar un token, corregir
+una cita). Si el ajuste exige más de 5 edits, **REESCRIBE el archivo completo**
+con el contenido ya compactado (write directo <= 28 KB o `--sources`) — nunca
+edites sección por sección. Un edit = un round-trip que reenvía todo el
+historial; 166 edits de design-system.md consumieron 367k tokens in / 26.5M de
+cache y 81 min (caso real ota-signing-keys). `--check` falla también si detecta
+secciones duplicadas (encabezado repetido).
+
+**Releer antes de editar**: tras un ensamblaje con `write-md.mjs --sources`, el
+archivo en disco cambió — relee SIEMPRE el archivo antes de cualquier edit
+(edit contra un oldString desactualizado = tool error + duplicados, caso real:
+7 edits fallidos tras re-ensamblaje de design-system.md).
 
 ### Retry policy (subagentes)
 If a delegated subagent fails with a **transient** error (`Upstream request
@@ -96,6 +127,24 @@ the same `task_id` when possible. Only after 3 consecutive failures apply the
 fail-safe rule (load the expert's skill yourself and inject its methodology).
 Record every retry in RUN-STATE.json and in the final report. Most harness
 retries observed in real runs were transient provider failures, not logic bugs.
+
+**Validation failures are NOT provider retries**: si un experto devuelve un
+artefacto que falla `--check` por budget, no reintentes la delegación completa.
+Aplica el recorte dirigido de Artifact integrity (máx 2 ciclos) y, si el experto
+no puede ajustar el tamaño, STOP y reporta el delta al usuario en vez de
+regenerar en bucle (caso real: 9 ciclos de regeneración de research.md por un
+check de budget que falló 8 veces).
+
+### Deltas en sesión nueva (prohibido reutilizar la sesión del experto)
+Un delta (refinamiento, actualización de un artefacto ya aprobado) se delega
+SIEMPRE con la tool Task **sin `task_id`** — opencode crea una sesión nueva y
+limpia. **Nunca reutilices la sesión del experto** (`task_id` de una delegación
+anterior): acumula todo el historial (el delta de design-system.md sobre la
+sesión de la ronda 1 llegó a 840 parts / 367k tokens in / 81 min y el experto,
+con el estado viejo en contexto, reintrodujo una sección duplicada que el
+usuario ya había corregido — caso real ota-signing-keys). Al delegar un delta,
+pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido +
+path), nunca asumas que el experto conoce el archivo.
 
 ### Synthesis (HARD GATE — approval required)
 Consolidate all artifacts into `docs/design/<scope>/design-proposal.md`:

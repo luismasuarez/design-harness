@@ -34,6 +34,19 @@ import { readFileSync, writeFileSync, existsSync, statSync, rmSync } from "node:
 import { join, resolve, dirname } from "node:path"
 
 const CONTINUATION = /\[(?:CONTINUAR|CONTINUE)\][\s\S]*$|<!--\s*(?:CONTINUAR|more|TO BE CONTINUED)[\s\S]*$/i
+// Encabezados de sección (## o ###) cuyo título repetido indica una sección
+// duplicada — síntoma de edits incrementales que reinsertan contenido viejo.
+const HEADING = /^#{2,3}\s+.*$/gm
+
+function findDuplicateHeadings(raw) {
+  const seen = new Map()
+  for (const m of raw.matchAll(HEADING)) {
+    const key = m[0].trim().toLowerCase()
+    if (seen.has(key)) return { heading: seen.get(key), dup: key }
+    seen.set(key, m[0].trim())
+  }
+  return null
+}
 
 function parseArgs(argv) {
   const a = { sources: [], budget: null, check: false, report: false, cleanup: null }
@@ -80,6 +93,8 @@ function validate(file, budget) {
   if (!raw.endsWith("\n")) errors.push("el archivo no termina en salto de línea")
   if (!raw.trim()) errors.push("el archivo está vacío")
   if (budget != null && size > budget) errors.push(`excede el budget (${size} > ${budget} bytes)`)
+  const dup = findDuplicateHeadings(raw)
+  if (dup) errors.push(`sección duplicada: "${dup.heading}" aparece más de una vez (edits que reinsertan contenido viejo)`)
   for (const e of errors) warn(`- ${e}`)
   if (errors.length) {
     console.error(`fail: ${file} (${size} bytes)`)

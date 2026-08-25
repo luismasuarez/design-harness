@@ -235,7 +235,18 @@ test("prompts de expertos incluyen la estrategia G6 (write directo, presupuesto 
     assert.ok(p.includes("RECORTE DIRIGIDO"), `${id}: recorte dirigido presente`)
     assert.ok(p.includes("--report"), `${id}: referencia a write-md --report`)
     assert.ok(p.includes("Máximo 2 ciclos"), `${id}: límite de 2 ciclos presente`)
+    assert.ok(p.includes("TOPE DE EDITS"), `${id}: tope de edits correctivos presente`)
+    assert.ok(p.includes("RELEER ANTES DE EDITAR"), `${id}: releer antes de editar presente`)
   }
+})
+
+test("el orquestador incluye la DELTA RULE (sesión nueva, sin task_id)", () => {
+  run("--stack", "both")
+  const cfg = readJson(join(project, "opencode.json"))
+  const orq = cfg.agent["design-orchestrator"].prompt
+  assert.ok(orq.includes("DELTA RULE"), "orquestador con DELTA RULE")
+  assert.ok(orq.includes("SIN task_id"), "DELTA RULE prohíbe reutilizar la sesión del experto")
+  assert.ok(orq.includes("NUNCA reutilices la sesión del experto"), "DELTA RULE explícita")
 })
 
 test("write-md.mjs --report lista el tamaño por sección y el recorte necesario (G6-5)", () => {
@@ -257,6 +268,25 @@ test("write-md.mjs --report lista el tamaño por sección y el recorte necesario
     assert.equal(over.status, 2, "exit 2 cuando excede el budget")
     const total = Buffer.byteLength(readFileSync(s1)) + Buffer.byteLength(readFileSync(s2))
     assert.ok(over.stdout.includes(`recorte necesario: ${total - 10000} bytes`), `delta exacto en stdout: ${over.stdout}`)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test("write-md.mjs --check falla con secciones duplicadas (anti-edit-storm, G6-6)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "writemd-dup-"))
+  try {
+    const out = join(tmp, "dup.md")
+    writeFileSync(out, "# Reporte\n\n## 9.1 Targets táctiles\n\nx\n\n## 9.1 Targets táctiles\n\nx\n\n## 9.2 Disabled\n\nx\n")
+    const script = join(dirname(fileURLToPath(import.meta.url)), "..", "skills", "design-orchestrator", "scripts", "write-md.mjs")
+    const r = spawnSync(process.execPath, [script, "--check", "--file", out, "--budget", "100000"], { encoding: "utf8" })
+    assert.equal(r.status, 1, "check debe fallar con sección duplicada")
+    assert.ok(r.stderr.includes("sección duplicada"), `mensaje de duplicado en stderr: ${r.stderr}`)
+    assert.ok(r.stderr.includes("9.1 Targets táctiles"), "cita el encabezado duplicado")
+    // Sin duplicados → ok
+    writeFileSync(out, "# Reporte\n\n## 9.1 Targets táctiles\n\nx\n\n## 9.2 Disabled\n\nx\n")
+    const ok = spawnSync(process.execPath, [script, "--check", "--file", out, "--budget", "100000"], { encoding: "utf8" })
+    assert.equal(ok.status, 0, ok.stderr)
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }

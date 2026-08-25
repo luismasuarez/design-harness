@@ -298,3 +298,54 @@ ciclos) se escribe en 1 intento conservando el contenido completo.
 - `node --test` → 21/21 (incluye tests de la estrategia G6 y de `--report`).
 - Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
   para que los prompts/budgets nuevos tomen efecto.
+
+---
+
+## G7 — Edit-storm por recorte incremental + delta sobre la sesión del experto (expert-design-system ota-signing-keys)
+
+**Evidencia** (sesión `ses_fc9d8feb...`, portal_cloud, 2026-08-24/25):
+- expert-design-system consumió **367k tokens in / 26.5M cacheRead / 840 parts /
+  260 tools / 166 edits / 81 min** (vs 5-10 min y 0-3 edits en corridas previas
+  del mismo experto; critique: 101k/5min, wireframe: 88k/10min). El write
+  inicial fue de 34,176 bytes > budget 32,768 → el `--check` falló → en lugar del
+  recorte dirigido (máx 2 ciclos) el experto hizo 166 micro-edits, cada uno un
+  round-trip que reenvía el historial completo (26.5M cacheRead).
+- **Duplicado 9.1/9.2 reintroducido**: la ronda delta (task #6 "Design-system
+  delta tabs") reutilizó la MISMA sesión del experto (`task_id` → sesión de la
+  ronda 1). El experto, con el estado viejo en contexto, reintrodujo una sección
+  que el usuario ya había corregido a mano. El task quedó `running` y la sesión
+  se interrumpió en `currentPhase: "synthesis"`.
+- 7 tool errors de edit (`oldString and newString are identical`) + 32/35
+  llamadas a `write-md.mjs` con fallo — edits contra un archivo re-ensamblado
+  cuyo contenido en disco ya no coincidía con el contexto.
+
+**Fix (v1.4)**:
+- **Tope de edits correctivos (anti-edit-storm)**: máx 5 edits por artefacto;
+  si el ajuste exige más, REESCRIBE el archivo completo con el contenido ya
+  compactado (write directo ≤28KB o `--sources`). (`SKILL.md` Artifact
+  integrity + bloque ESCRITURA ROBUSTA de `install.mjs`).
+- **`write-md.mjs --check` detecta secciones duplicadas**: encabezado `##`/`###`
+  repetido → fail (exit 1), para atrapar la reintroducción de contenido viejo.
+- **DELTA RULE**: los deltas se delegan SIEMPRE con la tool Task SIN `task_id`
+  (sesión nueva y limpia); nunca reutilizar la sesión del experto. Al delegar,
+  pasar el estado ACTUAL del artefacto en el prompt. (`SKILL.md` + prompt del
+  orquestador en `install.mjs`).
+- **Releer antes de editar**: tras un ensamblaje `--sources`, releer el archivo
+  antes de cualquier edit (evita los tool errors por oldString desactualizado).
+- **Nota de paridad repo↔instalado**: el `opencode.json` del repo es plantilla
+  `both`; `install.mjs` filtra los prompts por `--stack` (`README.md`).
+- Tests: 23/23 (2 nuevos: duplicados en `--check` + DELTA RULE en el prompt del
+  orquestador).
+
+**Impacto esperado**: un experto de diseño termina en 1-2 escrituras (5-10 min)
+en vez de 166 edits (81 min / 367k tokens); los deltas no arrastran el historial
+ni reintroducen contenido corregido.
+
+---
+
+# Verificación de la v1.4
+
+- `node --test` → 23/23 (incluye tests de duplicados y DELTA RULE).
+- `node --check` en `install.mjs` y `write-md.mjs` — sintaxis OK.
+- Reinstalar en los proyectos con `/design` (`node install.mjs install --force`)
+  para que los prompts/reglas nuevos tomen efecto.

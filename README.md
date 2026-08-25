@@ -39,6 +39,15 @@ Un solo modo en opencode (`design-orchestrator`), expertos invisibles por dentro
   de Vercel web se instala en targets web, la de React Native/Expo en móviles
   (`both` instala ambas).
 
+> **Paridad repo ↔ instalado**: el `opencode.json` de este repo es la plantilla
+> fuente con el stack `both` (todas las skills listadas). El instalador
+> (`install.mjs`) **filtra los prompts de los expertos por `--stack`**
+> (`renderExpertPrompt`): en un proyecto web el prompt de `expert-wireframe` solo
+> referencia `vercel-react-best-practices`, en móvil solo la de RN. Si al abrir
+> un proyecto ves que el prompt difiere del repo, es el filtrado por stack
+> actuando — no un desajuste. No edites a mano el `opencode.json` instalado para
+> "igualarlo"; reinstala con `--force` y el stack correcto.
+
 ## Instalación (en tu proyecto)
 
 **Vía A — un solo comando (recomendada)**: sin clonar, desde tu proyecto:

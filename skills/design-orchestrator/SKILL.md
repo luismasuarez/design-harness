@@ -104,6 +104,21 @@ sección: `write-md.mjs --report --file <artefacto> --sources <secciones>`.
 Máximo 2 ciclos de regeneración completa; si sigue fallando, STOP y reporta el
 delta y el plan de recorte en vez de seguir iterando.
 
+**Tope de edits correctivos (anti-edit-storm)**: el artefacto se escribe con
+UNA escritura (write directo o `--sources`), nunca con edits incrementales.
+Como máximo **5 edits correctivos** por artefacto (ajustar un token, corregir
+una cita). Si el ajuste exige más de 5 edits, **REESCRIBE el archivo completo**
+con el contenido ya compactado (write directo <= 28 KB o `--sources`) — nunca
+edites sección por sección. Un edit = un round-trip que reenvía todo el
+historial; 166 edits de design-system.md consumieron 367k tokens in / 26.5M de
+cache y 81 min (caso real ota-signing-keys). `--check` falla también si detecta
+secciones duplicadas (encabezado repetido).
+
+**Releer antes de editar**: tras un ensamblaje con `write-md.mjs --sources`, el
+archivo en disco cambió — relee SIEMPRE el archivo antes de cualquier edit
+(edit contra un oldString desactualizado = tool error + duplicados, caso real:
+7 edits fallidos tras re-ensamblaje de design-system.md).
+
 ### Retry policy (subagentes)
 If a delegated subagent fails with a **transient** error (`Upstream request
 failed`, `Endpoint is unavailable`, `network_error`, `invalid_request_error`,
@@ -119,6 +134,17 @@ Aplica el recorte dirigido de Artifact integrity (máx 2 ciclos) y, si el expert
 no puede ajustar el tamaño, STOP y reporta el delta al usuario en vez de
 regenerar en bucle (caso real: 9 ciclos de regeneración de research.md por un
 check de budget que falló 8 veces).
+
+### Deltas en sesión nueva (prohibido reutilizar la sesión del experto)
+Un delta (refinamiento, actualización de un artefacto ya aprobado) se delega
+SIEMPRE con la tool Task **sin `task_id`** — opencode crea una sesión nueva y
+limpia. **Nunca reutilices la sesión del experto** (`task_id` de una delegación
+anterior): acumula todo el historial (el delta de design-system.md sobre la
+sesión de la ronda 1 llegó a 840 parts / 367k tokens in / 81 min y el experto,
+con el estado viejo en contexto, reintrodujo una sección duplicada que el
+usuario ya había corregido — caso real ota-signing-keys). Al delegar un delta,
+pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido +
+path), nunca asumas que el experto conoce el archivo.
 
 ### Synthesis (HARD GATE — approval required)
 Consolidate all artifacts into `docs/design/<scope>/design-proposal.md`:
