@@ -361,6 +361,8 @@ function renderOrchestratorPrompt(gates, packageFilter, hasImpeccable) {
     ``,
     `ARTIFACT INTEGRITY: tras cada delegación, valida el artefacto con: node .opencode/skills/design-orchestrator/scripts/write-md.mjs --file <artefacto> --check --budget <bytes>. Confirma que existe, termina completo y no tiene marcadores de continuación sin resolver. Respeta los budgets del artifactBudget.`,
     ``,
+    `GROUPED COMMANDS: corre las gates del baseline y las validaciones post-delegación encadenadas en UN solo comando bash (p.ej. pnpm typecheck && pnpm lint; node .../write-md.mjs --check en una sola llamada por artefacto). No fragmentes cada gate en tool calls separadas: cada tool call es un round-trip y un prompt de aprobación.`,
+    ``,
     `RETRY POLICY: if a delegated subagent fails with a transient error (Upstream request failed, Endpoint is unavailable, network_error, invalid_request, response was not valid JSON), RETRY up to 3 times with backoff, resuming the SAME task_id if possible. Only after 3 failures apply the fail-safe rule (load the expert's skill yourself and inject its methodology). Record each retry in RUN-STATE.json and in the final report.`,
     ``,
     `SESIÓN LIMPIA (regla universal): TODA delegación nueva vía la tool Task — fase del pipeline, delta, iteración de feedback pre-aprobación, ronda 2 de critique, re-auditoría de paridad — se delega SIN task_id: opencode crea una sesión nueva y limpia (documentado en sessions.create: reusar un id reutiliza la sesión existente con todo su historial). NUNCA reutilices la sesión del experto para contenido nuevo (una sesión de expert-design-system llegó a 1061 parts / contexto sucio y reintrodujo secciones duplicadas — caso real ota-signing-keys). task_id SOLO se reutiliza para retry transitorio del MISMO intento (máx 3, ver RETRY POLICY). Al delegar una iteración o delta, pasa en el prompt el estado ACTUAL del artefacto (contenido ya corregido + path) — nunca asumas que el experto conoce el archivo ni su historial.`,
@@ -379,31 +381,37 @@ function renderOrchestratorPrompt(gates, packageFilter, hasImpeccable) {
 
 /* ---------- permisos ---------- */
 
+// Base común de comandos bash read-only/de verificación permitidos para TODOS
+// los agentes (orquestador, expertos, executor). Deny por defecto bloqueó
+// decenas de comandos de inspección (wc, grep, sed, node -e, pipes...) en las
+// corridas reales (v1.1); y el orquestador con "ask" plano pedía aprobación
+// hasta para escribir su propio RUN-STATE.json (v1.5.1). El resto cae en "ask"
+// (supervisado, no bloqueante).
+const BASH_READ_ALLOW = [
+  "git *",
+  "git show *",
+  "git log *",
+  "git diff *",
+  "git status *",
+  "ls *",
+  "find *",
+  "cat *",
+  "rg *",
+  "grep *",
+  "wc *",
+  "sed *",
+  "sort *",
+  "file *",
+  "head *",
+  "tail *",
+  "mkdir *",
+  "node *",
+  "npx *",
+  "python3 *",
+]
+
 function expertPermissions(expert, stack = "web") {
-  // Deny por defecto bloqueó decenas de comandos de inspección (wc, grep, sed,
-  // node -e, pipes...) en las corridas reales. Ampliamos el allow con las
-  // herramientas estándar de lectura/verificación y pasamos el resto a "ask"
-  // (supervisado) en vez de deny silencioso.
-  const bashAllow = [
-    "git *",
-    "git show *",
-    "git log *",
-    "git diff *",
-    "ls *",
-    "find *",
-    "cat *",
-    "rg *",
-    "grep *",
-    "wc *",
-    "sed *",
-    "file *",
-    "head *",
-    "tail *",
-    "mkdir *",
-    "node *",
-    "npx *",
-  ]
-  if (expert.skills.includes("ui-ux-pro-max")) bashAllow.push("python3 *")
+  const bashAllow = [...BASH_READ_ALLOW]
   if (expert.skills.includes("impeccable")) {
     bashAllow.push("npx impeccable *", "node .opencode/skills/impeccable/scripts/*")
   }
@@ -419,34 +427,23 @@ function expertPermissions(expert, stack = "web") {
   }
 }
 
+function orchestratorPermissions() {
+  // v1.5.1: el orquestador era el ÚNICO agente con "ask" plano (sin allowlist)
+  // — pedía confirmación hasta para correr las gates declaradas y escribir su
+  // propio checkpoint. Como el orquestador nunca edita código fuente (regla:
+  // solo el executor), edit se restringe a docs/design/** y bash gana la base
+  // read-only + los package managers de las gates. El resto sigue "ask".
+  const bashAllow = [...BASH_READ_ALLOW, "pnpm *", "npm *", "yarn *"]
+  return {
+    edit: { "*": "deny", "docs/design/**": "allow" },
+    bash: { "*": "ask", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
+    task: { "*": "deny", "expert-*": "allow", "executor": "allow" },
+    skill: { "*": "deny", [ORCHESTRATOR]: "allow" },
+  }
+}
+
 function executorPermissions(writePaths) {
-  const bashAllow = [
-    "git *",
-    "git show *",
-    "git log *",
-    "git diff *",
-    "git status *",
-    "pnpm *",
-    "npm *",
-    "yarn *",
-    "node *",
-    "npx *",
-    "python3 *",
-    "ls *",
-    "find *",
-    "cat *",
-    "rg *",
-    "grep *",
-    "wc *",
-    "sed *",
-    "cp *",
-    "mv *",
-    "rm *",
-    "file *",
-    "mkdir *",
-    "head *",
-    "tail *",
-  ]
+  const bashAllow = [...BASH_READ_ALLOW, "pnpm *", "npm *", "yarn *", "cp *", "mv *", "rm *"]
   return {
     edit: { "*": "deny", [writePaths]: "allow", "docs/**": "allow" },
     bash: { "*": "ask", ...Object.fromEntries(bashAllow.map((b) => [b, "allow"])) },
@@ -469,12 +466,7 @@ function buildConfig(manifestData, args) {
     description: m.orchestrator.agent.description,
     mode: "primary",
     prompt: renderOrchestratorPrompt(args.gates, args.packageFilter, hasImpeccable),
-    permission: {
-      edit: "ask",
-      bash: "ask",
-      task: { "*": "deny", "expert-*": "allow", "executor": "allow" },
-      skill: { "*": "deny", [ORCHESTRATOR]: "allow" },
-    },
+    permission: orchestratorPermissions(),
   }
 
   for (const expert of m.roster.experts) {

@@ -124,6 +124,14 @@ archivo en disco cambió — relee SIEMPRE el archivo antes de cualquier edit
 (edit contra un oldString desactualizado = tool error + duplicados, caso real:
 7 edits fallidos tras re-ensamblaje de design-system.md).
 
+**Comandos agrupados (fin de la fricción de aprobaciones)**: corre las gates del
+baseline y las validaciones post-delegación encadenadas en UN solo comando bash
+(p.ej. `pnpm typecheck && pnpm lint`; `node .../write-md.mjs --check` en una sola
+llamada por artefacto). No fragmentes cada gate en tool calls separadas: cada
+tool call es un round-trip y un prompt de aprobación. Los writes propios del
+pipeline (RUN-STATE.json, design-proposal.md) están permitidos bajo
+`docs/design/**` — no esperes confirmación para ellos.
+
 ### Retry policy (subagentes)
 If a delegated subagent fails with a **transient** error (`Upstream request
 failed`, `Endpoint is unavailable`, `network_error`, `invalid_request_error`,

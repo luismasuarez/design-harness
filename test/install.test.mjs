@@ -136,8 +136,7 @@ test("gates parametrizadas llegan al prompt del executor", () => {
   run("--gates", "pnpm --filter @org/console typecheck;pnpm lint")
   const cfg = readJson(join(project, "opencode.json"))
   assert.ok(cfg.agent.executor.prompt.includes("pnpm --filter @org/console typecheck"))
-  assert.ok(cfg.agent["design-orchestrator"].prompt.includes("pnpm --filter @org/console typecheck"))
-})
+  assert.ok(cfg.agent["design-orchestrator"].prompt.includes("pnpm --filter @org/console typecheck"))})
 
 test("auto-detecta gates del proyecto: typecheck/tsc, workspaces y lint:ci", () => {
   // Simula un monorepo pnpm con app raíz (sin script typecheck) + workspace cli
@@ -388,4 +387,23 @@ test("G8-5: expert-critique con heurísticas de SCOPE FIDELITY y FIDELIDAD DE DA
   assert.ok(cr.includes("FIDELIDAD DE DATOS (heurística"), "critique con heurística de datos")
   assert.ok(cr.includes("NO es APROBADO"), "veredicto exige fidelidad")
   assert.ok(cr.includes("además del umbral de score"), "fidelidad es requisito, no solo score")
+})
+
+test("G9: orquestador con allowlist de permisos (fin de la fricción de aprobaciones)", () => {
+  run()
+  const cfg = readJson(join(project, "opencode.json"))
+  const orq = cfg.agent["design-orchestrator"]
+  const perm = orq.permission
+  assert.ok(perm.edit && typeof perm.edit === "object", "edit NO es 'ask' plano")
+  assert.equal(perm.edit["docs/design/**"], "allow", "orquestador escribe artefactos del pipeline sin confirmar")
+  assert.equal(perm.edit["*"], "deny", "nunca edita código fuente (deny)")
+  assert.ok(perm.bash && typeof perm.bash === "object", "bash NO es 'ask' plano")
+  assert.equal(perm.bash["pnpm *"], "allow", "gates del baseline permitidas")
+  assert.equal(perm.bash["node *"], "allow", "validación de artefactos permitida")
+  assert.equal(perm.bash["sort *"], "allow", "inspección con sort permitida")
+  assert.equal(perm.bash["*"], "ask", "lo desconocido sigue supervisado")
+  assert.equal(perm.task["expert-*"], "allow", "delega a expertos")
+  assert.equal(perm.task["*"], "deny", "no delega a agentes arbitrarios")
+  // regla de agrupación presente en el prompt instalado
+  assert.ok(orq.prompt.includes("GROUPED COMMANDS"), "prompt con GROUPED COMMANDS")
 })
